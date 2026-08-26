@@ -178,8 +178,8 @@ export function BattleSystem({ onBack }: BattleSystemProps) {
               <Swords className="w-6 h-6 text-white" />
             </div>
             <div>
-              <h2 className="text-xl font-bold text-foreground">1v1 Battle</h2>
-              <p className="text-sm text-muted-foreground">Challenge a friend to situps!</p>
+              <h2 className="text-xl font-bold text-foreground">Head-to-Head</h2>
+              <p className="text-sm text-muted-foreground">Challenge a friend or stranger to a situp sprint.</p>
             </div>
           </div>
 
@@ -248,8 +248,8 @@ export function BattleSystem({ onBack }: BattleSystemProps) {
           <div className="w-16 h-16 rounded-[var(--clay-radius)] bg-[var(--primary)]/10 flex items-center justify-center mx-auto mb-4">
             <Users className="w-8 h-8 text-[var(--primary)]" />
           </div>
-          <h2 className="text-2xl font-bold text-foreground mb-2">Waiting for opponent...</h2>
-          <p className="text-muted-foreground mb-6">Share this code or scan the QR</p>
+          <h2 className="text-2xl font-bold text-foreground mb-2">Waiting for opponent</h2>
+          <p className="text-muted-foreground mb-6">Share the code or scan the QR to join.</p>
 
           {/* Battle code */}
           <div className="clay-inset p-4 mb-4">
@@ -269,7 +269,7 @@ export function BattleSystem({ onBack }: BattleSystemProps) {
           <div className="clay-card p-6 inline-block">
             <QRCodeSVG value={getBattleUrl()} size={180} bgColor="transparent" fgColor="var(--foreground)" />
           </div>
-          <p className="text-xs text-muted-foreground mt-3">Scan to join this battle</p>
+          <p className="text-xs text-muted-foreground mt-3">Scan to join this match</p>
 
           {/* Waiting animation */}
           <div className="flex justify-center gap-1 mt-6">
@@ -296,8 +296,7 @@ export function BattleSystem({ onBack }: BattleSystemProps) {
       <div className="flex flex-col items-center justify-center min-h-[60vh]">
         <div className="clay-counter w-40 h-40 text-7xl font-black animate-pulse">
           {countdown}
-        </div>
-        <p className="text-xl text-muted-foreground mt-6 font-medium">Get ready!</p>
+        </div>          <p className="text-xl text-muted-foreground mt-6 font-medium">Stand by</p>
       </div>
     );
   }
@@ -373,9 +372,9 @@ export function BattleSystem({ onBack }: BattleSystemProps) {
         </div>
 
         <h2 className="text-3xl font-black text-foreground mb-2">
-          {winner === "me" && "🎉 You Win!"}
-          {winner === "opponent" && "😤 You Lose!"}
-          {winner === "draw" && "🤝 Draw!"}
+          {winner === "me" && "Victory"}
+          {winner === "opponent" && "Defeat"}
+          {winner === "draw" && "Draw"}
         </h2>
 
         <div className="grid grid-cols-2 gap-4 mt-6">

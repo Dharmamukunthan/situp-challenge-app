@@ -51,7 +51,15 @@ const schema = defineSchema(
       battleCode: v.string(),
     }).index("by_code", ["battleCode"])
       .index("by_creator", ["creatorId"])
-      .index("by_opponent", ["opponentId"])
+      .index("by_opponent", ["opponentId"]),
+
+    posts: defineTable({
+      userId: v.string(),
+      userName: v.string(),
+      content: v.string(),
+      reps: v.optional(v.number()),
+      createdAt: v.number(),
+    }).index("by_time", ["createdAt"])
   },
   {
     schemaValidation: false,

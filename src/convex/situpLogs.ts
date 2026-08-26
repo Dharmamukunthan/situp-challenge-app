@@ -63,3 +63,33 @@ export const logSession = mutation({
     return args.sessionReps;
   },
 });
+
+export const getLeaderboard = query({
+  args: {},
+  handler: async (ctx) => {
+    const today = new Date().toISOString().split("T")[0];
+    const allLogs = await ctx.db.query("situpLogs").collect();
+    const todayLogs = allLogs.filter((l) => l.date === today);
+
+    const byUser: Record<string, { userId: string; total: number }> = {};
+    for (const log of todayLogs) {
+      if (!byUser[log.userId]) byUser[log.userId] = { userId: log.userId, total: 0 };
+      byUser[log.userId].total += log.sessionReps;
+    }
+
+    const entries = Object.values(byUser);
+    const results: { userId: string; userName: string; total: number }[] = [];
+    for (const entry of entries.slice(0, 20)) {
+      let userName = "Athlete";
+      try {
+        const userDoc = await ctx.db.get(entry.userId as any);
+        if (userDoc && "name" in userDoc) userName = (userDoc as any).name || "Athlete";
+      } catch {
+        // ignore
+      }
+      results.push({ userId: entry.userId, userName, total: entry.total });
+    }
+
+    return results.sort((a, b) => b.total - a.total);
+  },
+});

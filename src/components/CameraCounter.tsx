@@ -81,7 +81,7 @@ export function CameraCounter({ onSessionEnd, dailyGoal = 100 }: CameraCounterPr
               {cameraOn && (
                 <div className="clay-inset bg-background/70 backdrop-blur-sm px-4 py-3 text-center">
                   <p className="text-sm text-muted-foreground">
-                    {isInUpPhase ? "⬆ Sit up! Hold the top" : "⬇ Go back down"}
+                    {isInUpPhase ? "Hold at the top" : "Lower back down"}
                   </p>
                 </div>
               )}
@@ -122,7 +122,7 @@ export function CameraCounter({ onSessionEnd, dailyGoal = 100 }: CameraCounterPr
         </div>
         {goalProgress >= 100 && (
           <p className="mt-2 text-sm font-medium text-[var(--accent)]">
-            🎉 Goal reached! Keep going!
+            Daily goal reached.
           </p>
         )}
       </div>
@@ -153,7 +153,7 @@ export function CameraCounter({ onSessionEnd, dailyGoal = 100 }: CameraCounterPr
         {!sessionActive ? (
           <Button onClick={startSession} className="clay-btn flex-1 h-14 text-lg font-semibold">
             <Camera className="w-5 h-5 mr-2" />
-            Start Counting
+            Start Session
           </Button>
         ) : (
           <>
