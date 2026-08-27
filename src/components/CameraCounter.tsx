@@ -1,7 +1,7 @@
 import { useRef, useState, useCallback } from "react";
 import { usePoseDetection } from "@/hooks/usePoseDetection";
 import { Button } from "@/components/ui/button";
-import { Camera, CameraOff, RotateCcw, Trophy, Zap } from "lucide-react";
+import { Camera, CameraOff, RotateCcw, Trophy, Zap, ExternalLink } from "lucide-react";
 
 interface CameraCounterProps {
   onSessionEnd?: (reps: number) => void;
@@ -182,8 +182,28 @@ export function CameraCounter({ onSessionEnd, dailyGoal = 100 }: CameraCounterPr
       </div>
 
       {error && (
-        <div className="clay-card p-4 w-full max-w-md border-red-400/50">
-          <p className="text-sm text-red-500">{error}</p>
+        <div className="clay-card p-4 w-full max-w-md">
+          {error === "CAMERA_BLOCKED_IFRAME" ? (
+            <div className="text-center">
+              <CameraOff className="w-8 h-8 text-[var(--primary)] mx-auto mb-2" />
+              <p className="text-sm font-medium text-foreground mb-1">
+                Camera unavailable in preview
+              </p>
+              <p className="text-xs text-muted-foreground mb-3">
+                Browser security blocks camera access inside embedded previews.
+                Open the app in a full tab to use the camera.
+              </p>
+              <Button
+                onClick={() => window.open(window.location.href, "_blank")}
+                className="clay-btn h-10 px-5 text-sm"
+              >
+                <ExternalLink className="w-4 h-4 mr-2" />
+                Open in New Tab
+              </Button>
+            </div>
+          ) : (
+            <p className="text-sm text-red-500">{error}</p>
+          )}
         </div>
       )}
     </div>

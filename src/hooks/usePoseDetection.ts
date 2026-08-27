@@ -18,7 +18,13 @@ export function usePoseDetection(
   const motionAccRef = useRef(0);
   const cooldownRef = useRef(0);
 
+  const isInIframe = typeof window !== "undefined" && window.self !== window.top;
+
   const startCamera = useCallback(async () => {
+    if (isInIframe) {
+      setError("CAMERA_BLOCKED_IFRAME");
+      return;
+    }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
@@ -33,10 +39,17 @@ export function usePoseDetection(
         await videoRef.current.play();
       }
       setError(null);
-    } catch {
-      setError("Camera access denied. Please allow camera permissions.");
+    } catch (err) {
+      const name = (err as Error).name;
+      if (name === "NotAllowedError" || name === "PermissionDeniedError") {
+        setError("Camera permission was denied. Enable it in your browser settings and reload.");
+      } else if (name === "NotFoundError") {
+        setError("No camera found on this device.");
+      } else {
+        setError("Camera access denied. Please allow camera permissions.");
+      }
     }
-  }, [videoRef]);
+  }, [videoRef, isInIframe]);
 
   const stopCamera = useCallback(() => {
     if (streamRef.current) {

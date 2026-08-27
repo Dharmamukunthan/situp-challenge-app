@@ -15,6 +15,7 @@ import {
   Check,
   RotateCcw,
   Zap,
+  ExternalLink,
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 
@@ -353,8 +354,22 @@ export function BattleSystem({ onBack }: BattleSystemProps) {
         </div>
 
         {error && (
-          <div className="clay-card p-3 border-red-400/50">
-            <p className="text-sm text-red-500">{error}</p>
+          <div className="clay-card p-3">
+            {error === "CAMERA_BLOCKED_IFRAME" ? (
+              <div className="text-center">
+                <p className="text-sm font-medium text-foreground mb-1">Camera unavailable in preview</p>
+                <p className="text-xs text-muted-foreground mb-2">Open in a full tab to use the camera during battles.</p>
+                <Button
+                  onClick={() => window.open(window.location.href, "_blank")}
+                  className="clay-btn h-8 px-4 text-xs"
+                >
+                  <ExternalLink className="w-3 h-3 mr-1" />
+                  Open in New Tab
+                </Button>
+              </div>
+            ) : (
+              <p className="text-sm text-red-500">{error}</p>
+            )}
           </div>
         )}
       </div>
