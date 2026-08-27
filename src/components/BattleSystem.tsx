@@ -7,7 +7,6 @@ import { usePoseDetection } from "@/hooks/usePoseDetection";
 import {
   Swords,
   Clock,
-  Camera,
   CameraOff,
   Trophy,
   Users,
@@ -39,6 +38,8 @@ export function BattleSystem({ onBack }: BattleSystemProps) {
   const [myScore, setMyScore] = useState(0);
   const [opponentScore, setOpponentScore] = useState(0);
   const [winner, setWinner] = useState<"me" | "opponent" | "draw" | null>(null);
+  const myScoreRef = useRef(0);
+  const opponentScoreRef = useRef(0);
 
   const createBattle = useMutation(api.battles.createBattle);
   const joinBattle = useMutation(api.battles.joinBattle);
@@ -61,6 +62,7 @@ export function BattleSystem({ onBack }: BattleSystemProps) {
   useEffect(() => {
     if (phase === "active" && battleId && userId) {
       setMyScore(repCount);
+      myScoreRef.current = repCount;
       updateScore({ battleId: battleId as any, userId, score: repCount });
     }
   }, [repCount, phase, battleId, userId, updateScore]);
@@ -70,8 +72,10 @@ export function BattleSystem({ onBack }: BattleSystemProps) {
     if (!battle || !userId) return;
     if (battle.creatorId === userId) {
       setOpponentScore(battle.opponentScore);
+      opponentScoreRef.current = battle.opponentScore;
     } else {
       setOpponentScore(battle.creatorScore);
+      opponentScoreRef.current = battle.creatorScore;
     }
   }, [battle, userId]);
 
@@ -117,10 +121,12 @@ export function BattleSystem({ onBack }: BattleSystemProps) {
   const finishBattle = useCallback(() => {
     setPhase("finished");
     if (battleId) endBattle({ battleId: battleId as any });
-    if (myScore > opponentScore) setWinner("me");
-    else if (opponentScore > myScore) setWinner("opponent");
+    const my = myScoreRef.current;
+    const opp = opponentScoreRef.current;
+    if (my > opp) setWinner("me");
+    else if (opp > my) setWinner("opponent");
     else setWinner("draw");
-  }, [battleId, myScore, opponentScore, endBattle]);
+  }, [battleId, endBattle]);
 
   const handleCreateBattle = async () => {
     const result = await createBattle({ creatorId: userId, duration });

@@ -1,10 +1,18 @@
 import { v } from "convex/values";
 import { query, mutation } from "./_generated/server";
 
+function getLocalDateStr(): string {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
 export const getTodayLogs = query({
   args: { userId: v.string() },
   handler: async (ctx, args) => {
-    const today = new Date().toISOString().split("T")[0];
+    const today = getLocalDateStr();
     return await ctx.db
       .query("situpLogs")
       .withIndex("by_user_date", (q) =>
@@ -17,7 +25,7 @@ export const getTodayLogs = query({
 export const getTodayCount = query({
   args: { userId: v.string() },
   handler: async (ctx, args) => {
-    const today = new Date().toISOString().split("T")[0];
+    const today = getLocalDateStr();
     const logs = await ctx.db
       .query("situpLogs")
       .withIndex("by_user_date", (q) =>
@@ -53,7 +61,7 @@ export const logSession = mutation({
     sessionReps: v.number(),
   },
   handler: async (ctx, args) => {
-    const today = new Date().toISOString().split("T")[0];
+    const today = getLocalDateStr();
     await ctx.db.insert("situpLogs", {
       userId: args.userId,
       date: today,
@@ -67,7 +75,7 @@ export const logSession = mutation({
 export const getLeaderboard = query({
   args: {},
   handler: async (ctx) => {
-    const today = new Date().toISOString().split("T")[0];
+    const today = getLocalDateStr();
     const allLogs = await ctx.db.query("situpLogs").collect();
     const todayLogs = allLogs.filter((l) => l.date === today);
 

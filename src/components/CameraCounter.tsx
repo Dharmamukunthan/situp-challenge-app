@@ -27,6 +27,7 @@ export function CameraCounter({ onSessionEnd, dailyGoal = 100 }: CameraCounterPr
 
   const endSession = useCallback(() => {
     setSessionActive(false);
+    setCameraOn(false);
     onSessionEnd?.(repCount);
   }, [repCount, onSessionEnd]);
 
