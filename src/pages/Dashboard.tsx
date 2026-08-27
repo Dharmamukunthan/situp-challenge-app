@@ -85,7 +85,10 @@ export default function Dashboard() {
     for (let i = 0; i < history.length; i++) {
       const expected = new Date(today);
       expected.setDate(expected.getDate() - i);
-      const expectedStr = expected.toISOString().split("T")[0];
+      const y = expected.getFullYear();
+      const m = String(expected.getMonth() + 1).padStart(2, "0");
+      const d = String(expected.getDate()).padStart(2, "0");
+      const expectedStr = `${y}-${m}-${d}`;
       if (history[i]?.date === expectedStr && history[i].count > 0) {
         streak++;
       } else {

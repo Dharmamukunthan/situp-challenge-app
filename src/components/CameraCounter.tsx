@@ -14,7 +14,7 @@ export function CameraCounter({ onSessionEnd, dailyGoal = 100 }: CameraCounterPr
   const [cameraOn, setCameraOn] = useState(false);
   const [sessionActive, setSessionActive] = useState(false);
 
-  const { repCount, currentAngle, modelLoaded, error, resetCount, isInUpPhase } =
+  const { repCount, currentAngle, error, resetCount, isInUpPhase } =
     usePoseDetection(videoRef, canvasRef, cameraOn);
 
   const goalProgress = Math.min((repCount / dailyGoal) * 100, 100);

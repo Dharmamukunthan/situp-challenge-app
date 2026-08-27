@@ -8,15 +8,18 @@ export function usePoseDetection(
   const [repCount, setRepCount] = useState(0);
   const [isInUpPhase, setIsInUpPhase] = useState(false);
   const [currentAngle, setCurrentAngle] = useState(0);
-  const [modelLoaded, setModelLoaded] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const animFrameRef = useRef<number>(0);
   const streamRef = useRef<MediaStream | null>(null);
   const repCountRef = useRef(0);
   const isInUpRef = useRef(false);
   const prevFrameRef = useRef<ImageData | null>(null);
-  const motionAccRef = useRef(0);
   const cooldownRef = useRef(0);
+
+  // Directional tracking state
+  const upMotionAccRef = useRef(0);   // accumulated upward motion
+  const downMotionAccRef = useRef(0); // accumulated downward motion
+  const phaseFramesRef = useRef(0);   // frames in current phase
 
   const isInIframe = typeof window !== "undefined" && window.self !== window.top;
 
@@ -60,11 +63,11 @@ export function usePoseDetection(
       cancelAnimationFrame(animFrameRef.current);
     }
     prevFrameRef.current = null;
-    motionAccRef.current = 0;
   }, []);
 
-  // Frame differencing motion detection
-  // Tracks vertical motion: significant upward motion = sit-up, rest = down
+  // Improved directional motion detection
+  // Tracks WHERE motion happens (top vs bottom of frame) to detect
+  // the directional pattern of a situp: body moves UP then DOWN
   const detectMotion = useCallback(() => {
     const video = videoRef.current;
     const canvas = canvasRef.current;
@@ -86,12 +89,16 @@ export function usePoseDetection(
       if (prevFrameRef.current) {
         const prev = prevFrameRef.current.data;
 
-        // Split frame into top and bottom halves
         const midY = Math.floor(h / 2);
-        let topMotion = 0;
-        let bottomMotion = 0;
+        const sampleStep = 16;
+
+        // Count moving pixels in each half and track their vertical center
+        let topMotionPixels = 0;
+        let bottomMotionPixels = 0;
+        let topWeightedY = 0;
+        let bottomWeightedY = 0;
         let totalMotion = 0;
-        const sampleStep = 20;
+        let motionPixelCount = 0;
 
         for (let y = 0; y < h; y += sampleStep) {
           for (let x = 0; x < w; x += sampleStep) {
@@ -100,59 +107,104 @@ export function usePoseDetection(
               Math.abs(data[i] - prev[i]) +
               Math.abs(data[i + 1] - prev[i + 1]) +
               Math.abs(data[i + 2] - prev[i + 2]);
-            totalMotion += diff;
-            if (y < midY) topMotion += diff;
-            else bottomMotion += diff;
+
+            // Only consider pixels with meaningful motion (threshold per-pixel)
+            if (diff > 40) {
+              totalMotion += diff;
+              motionPixelCount++;
+
+              if (y < midY) {
+                topMotionPixels++;
+                topWeightedY += y;
+              } else {
+                bottomMotionPixels++;
+                bottomWeightedY += y;
+              }
+            }
           }
         }
 
-        const totalPixels = (w / sampleStep) * (h / sampleStep);
-        const avgMotion = totalMotion / totalPixels;
-        const topAvg = topMotion / (totalPixels / 2);
-        const bottomAvg = bottomMotion / (totalPixels / 2);
+        const totalSampledPixels = (w / sampleStep) * (h / sampleStep);
+        const motionRatio = motionPixelCount / totalSampledPixels;
 
-        // Detect sit-up motion: body moves up → more motion in top half, less in bottom
-        // When sitting up: shoulders/head move up (increased top motion)
-        // When lying down: body drops (increased bottom motion)
-        const verticalBias = topAvg - bottomAvg;
+        // Calculate where the center of motion is (0 = top, 1 = bottom)
+        const motionCenter =
+          motionPixelCount > 0
+            ? (topWeightedY + bottomWeightedY) / (motionPixelCount * h)
+            : 0.5;
 
-        // Update angle display based on motion magnitude
-        setCurrentAngle(Math.min(180, Math.round(avgMotion * 2)));
+        // Show motion intensity as the "angle" display
+        setCurrentAngle(Math.min(100, Math.round(motionRatio * 300)));
 
         if (cooldownRef.current > 0) {
           cooldownRef.current--;
         }
 
-        // Motion threshold detection
-        if (avgMotion > 8) {
-          motionAccRef.current += avgMotion;
+        // Directional detection:
+        // When user sits up: body moves upward → motion center shifts UP (lower value)
+        // When user lies down: body moves downward → motion center shifts DOWN (higher value)
+        //
+        // We detect situp as a TWO-PHASE motion:
+        //   Phase 1: Motion center is in upper half (motionCenter < 0.45) = "sitting up"
+        //   Phase 2: Motion center drops to lower half (motionCenter > 0.55) = "lying down"
+        // When BOTH phases complete with enough motion → count 1 rep
 
-          // Strong upward bias suggests sitting up
-          if (verticalBias > 2 && !isInUpRef.current && cooldownRef.current === 0) {
-            isInUpRef.current = true;
-            setIsInUpPhase(true);
+        const UP_THRESHOLD = 0.42;   // motion center above this = body moving up
+        const DOWN_THRESHOLD = 0.58; // motion center below this = body moving down
+        const MIN_MOTION_RATIO = 0.03; // at least 3% of pixels must be moving
+        const MIN_FRAMES_PER_PHASE = 3; // minimum frames to validate a phase
+
+        if (motionRatio > MIN_MOTION_RATIO) {
+          phaseFramesRef.current++;
+
+          if (!isInUpRef.current) {
+            // Looking for UP phase
+            if (motionCenter < UP_THRESHOLD && phaseFramesRef.current >= MIN_FRAMES_PER_PHASE) {
+              isInUpRef.current = true;
+              setIsInUpPhase(true);
+              upMotionAccRef.current = motionRatio;
+              phaseFramesRef.current = 0;
+            }
+          } else {
+            // In UP phase, now looking for DOWN phase
+            upMotionAccRef.current += motionRatio;
+
+            if (motionCenter > DOWN_THRESHOLD && phaseFramesRef.current >= MIN_FRAMES_PER_PHASE) {
+              // Both phases detected! Count the rep
+              downMotionAccRef.current = motionRatio;
+
+              if (cooldownRef.current === 0) {
+                repCountRef.current += 1;
+                setRepCount(repCountRef.current);
+                cooldownRef.current = 20; // ~0.3s cooldown
+              }
+
+              // Reset for next rep
+              isInUpRef.current = false;
+              setIsInUpPhase(false);
+              upMotionAccRef.current = 0;
+              downMotionAccRef.current = 0;
+              phaseFramesRef.current = 0;
+            }
           }
-        }
+        } else {
+          // No significant motion — decay phase counters
+          phaseFramesRef.current = Math.max(0, phaseFramesRef.current - 1);
 
-        // When motion settles after a sit-up burst, count the rep
-        if (avgMotion < 4 && motionAccRef.current > 100 && isInUpRef.current && cooldownRef.current === 0) {
-          repCountRef.current += 1;
-          setRepCount(repCountRef.current);
-          isInUpRef.current = false;
-          setIsInUpPhase(false);
-          motionAccRef.current = 0;
-          cooldownRef.current = 15; // ~0.25s cooldown at 60fps
-        }
-
-        // Decay accumulator if motion stays low
-        if (avgMotion < 4) {
-          motionAccRef.current *= 0.95;
+          // If we were in up phase but motion stopped for too long, reset
+          // (user might have just moved their arm, not a real situp)
+          if (isInUpRef.current && phaseFramesRef.current === 0 && upMotionAccRef.current < 0.5) {
+            isInUpRef.current = false;
+            setIsInUpPhase(false);
+            upMotionAccRef.current = 0;
+            phaseFramesRef.current = 0;
+          }
         }
       }
 
       prevFrameRef.current = imageData;
     } catch {
-      // Canvas may be tainted in some environments
+      // Canvas tainted or unavailable
     }
   }, [videoRef, canvasRef]);
 
@@ -184,14 +236,15 @@ export function usePoseDetection(
     setRepCount(0);
     isInUpRef.current = false;
     setIsInUpPhase(false);
-    motionAccRef.current = 0;
+    upMotionAccRef.current = 0;
+    downMotionAccRef.current = 0;
+    phaseFramesRef.current = 0;
     prevFrameRef.current = null;
   }, []);
 
   return {
     repCount,
     currentAngle,
-    modelLoaded,
     error,
     resetCount,
     isInUpPhase,
