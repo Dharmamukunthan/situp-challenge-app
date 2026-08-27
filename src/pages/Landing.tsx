@@ -1,7 +1,8 @@
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router";
-import { Camera, Swords, Trophy, BarChart3, ChevronRight, Shield } from "lucide-react";
+import { Camera, Swords, Trophy, BarChart3, ChevronRight, Shield, Sun, Moon } from "lucide-react";
+import { useTheme } from "@/components/ThemeProvider";
 
 const features = [
   {
@@ -28,6 +29,7 @@ const features = [
 
 export default function Landing() {
   const navigate = useNavigate();
+  const { theme, toggleTheme } = useTheme();
 
   return (
     <div className="min-h-screen bg-background overflow-hidden">
@@ -40,12 +42,21 @@ export default function Landing() {
             </div>
             <span className="font-bold text-foreground">Situp Challenge</span>
           </div>
-          <Button
-            onClick={() => navigate("/auth")}
-            className="clay-btn h-9 px-5 text-sm font-medium"
-          >
-            Sign In
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              onClick={toggleTheme}
+              className="clay-btn w-9 h-9 p-0"
+              style={{ background: "var(--muted)", color: "var(--muted-foreground)" }}
+            >
+              {theme === "light" ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
+            </Button>
+            <Button
+              onClick={() => navigate("/auth")}
+              className="clay-btn h-9 px-5 text-sm font-medium"
+            >
+              Sign In
+            </Button>
+          </div>
         </div>
       </nav>
 
@@ -107,8 +118,8 @@ export default function Landing() {
                 <div className="clay-counter w-32 h-32 text-5xl font-black mb-4 animate-bounce">
                   <Trophy className="w-10 h-10" />
                 </div>
-                <p className="text-2xl font-bold text-foreground">42 reps</p>
-                <p className="text-sm text-muted-foreground mt-1">Current session</p>
+                <p className="text-2xl font-bold text-foreground">0 reps</p>
+                <p className="text-sm text-muted-foreground mt-1">Start counting</p>
 
                 <motion.div
                   animate={{ y: [-5, 5, -5] }}

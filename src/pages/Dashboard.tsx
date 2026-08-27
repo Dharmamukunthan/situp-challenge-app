@@ -24,6 +24,13 @@ import {
 
 type Tab = "counter" | "battles" | "leaderboard" | "feed";
 
+const navItems: { id: Tab; label: string; icon: typeof Camera }[] = [
+  { id: "counter", label: "Count", icon: Camera },
+  { id: "battles", label: "Battle", icon: Swords },
+  { id: "leaderboard", label: "Ranks", icon: Medal },
+  { id: "feed", label: "Feed", icon: BarChart3 },
+];
+
 export default function Dashboard() {
   const { user, signOut } = useAuth();
   const { theme, toggleTheme } = useTheme();
@@ -99,7 +106,7 @@ export default function Dashboard() {
   })();
 
   return (
-    <main className="min-h-screen bg-background">
+    <main className="min-h-screen bg-background pb-20">
       {/* Header */}
       <header className="sticky top-0 z-40 bg-background/80 backdrop-blur-md border-b border-[var(--border)]">
         <div className="max-w-2xl mx-auto px-4 py-3 flex items-center justify-between">
@@ -134,49 +141,28 @@ export default function Dashboard() {
       </header>
 
       <div className="max-w-2xl mx-auto px-4 py-6">
-        {/* Stats row */}
-        <div className="grid grid-cols-3 gap-3 mb-6">
-          <div className="clay-card p-4 text-center">
-            <Flame className="w-5 h-5 text-[var(--primary)] mx-auto mb-1" />
-            <p className="text-2xl font-black text-foreground">{todayCount ?? 0}</p>
-            <p className="text-xs text-muted-foreground">Today</p>
+        {/* Stats row — only on counter tab */}
+        {tab === "counter" && (
+          <div className="grid grid-cols-3 gap-3 mb-6">
+            <div className="clay-card p-4 text-center">
+              <Flame className="w-5 h-5 text-[var(--primary)] mx-auto mb-1" />
+              <p className="text-2xl font-black text-foreground">{todayCount ?? 0}</p>
+              <p className="text-xs text-muted-foreground">Today</p>
+            </div>
+            <div className="clay-card p-4 text-center">
+              <TrendingUp className="w-5 h-5 text-green-500 mx-auto mb-1" />
+              <p className="text-2xl font-black text-foreground">{streak}</p>
+              <p className="text-xs text-muted-foreground">Day Streak</p>
+            </div>
+            <div className="clay-card p-4 text-center">
+              <Target className="w-5 h-5 text-[var(--accent)] mx-auto mb-1" />
+              <p className="text-2xl font-black text-foreground">100</p>
+              <p className="text-xs text-muted-foreground">Daily Goal</p>
+            </div>
           </div>
-          <div className="clay-card p-4 text-center">
-            <TrendingUp className="w-5 h-5 text-green-500 mx-auto mb-1" />
-            <p className="text-2xl font-black text-foreground">{streak}</p>
-            <p className="text-xs text-muted-foreground">Day Streak</p>
-          </div>
-          <div className="clay-card p-4 text-center">
-            <Target className="w-5 h-5 text-[var(--accent)] mx-auto mb-1" />
-            <p className="text-2xl font-black text-foreground">100</p>
-            <p className="text-xs text-muted-foreground">Daily Goal</p>
-          </div>
-        </div>
+        )}
 
-        {/* Tab bar */}
-        <div className="clay-inset p-1 flex gap-1 mb-6">
-          {[
-            { id: "counter" as Tab, label: "Count", icon: Camera },
-            { id: "battles" as Tab, label: "Battle", icon: Swords },
-            { id: "leaderboard" as Tab, label: "Ranks", icon: Medal },
-            { id: "feed" as Tab, label: "Feed", icon: BarChart3 },
-          ].map((t) => (
-            <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-[var(--clay-radius)] font-medium text-sm transition-all ${
-                tab === t.id
-                  ? "bg-background shadow-md text-foreground"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              <t.icon className="w-4 h-4" />
-              {t.label}
-            </button>
-          ))}
-        </div>
-
-        {/* Content */}
+        {/* Tab content */}
         {tab === "counter" && (
           <CameraCounter onSessionEnd={handleSessionEnd} dailyGoal={100} />
         )}
@@ -333,6 +319,29 @@ export default function Dashboard() {
           </div>
         )}
       </div>
+
+      {/* Bottom Navigation Bar */}
+      <nav className="fixed bottom-0 left-0 right-0 z-50 bg-background/90 backdrop-blur-md border-t border-[var(--border)]">
+        <div className="max-w-2xl mx-auto flex">
+          {navItems.map((item) => {
+            const isActive = tab === item.id;
+            return (
+              <button
+                key={item.id}
+                onClick={() => setTab(item.id)}
+                className={`flex-1 flex flex-col items-center gap-1 py-3 transition-colors ${
+                  isActive
+                    ? "text-[var(--primary)]"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <item.icon className="w-5 h-5" />
+                <span className="text-[10px] font-medium">{item.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </nav>
     </main>
   );
 }

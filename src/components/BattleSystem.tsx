@@ -195,7 +195,7 @@ export function BattleSystem({ onBack }: BattleSystemProps) {
             <label className="text-sm font-medium text-foreground mb-3 block">Battle Duration</label>
             <div className="grid grid-cols-3 gap-3">
               {[
-                { value: 10, label: "10s", icon: "⚡" },
+                { value: 30, label: "30s", icon: "⚡" },
                 { value: 60, label: "1 min", icon: "🕐" },
                 { value: 300, label: "5 min", icon: "🏆" },
               ].map((d) => (
