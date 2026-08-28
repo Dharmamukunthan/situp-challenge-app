@@ -33,16 +33,14 @@ export default function Dashboard() {
   const [tab, setTab] = useState<Tab>("counter");
   const [historyRefreshKey, setHistoryRefreshKey] = useState(0);
 
-  const dailyLogs = useQuery(
-    api.situpLogs.getDailyCount,
+  const dailyCount = useQuery(
+    api.situpLogs.getTodayCount,
     user ? { userId: user._id } : "skip"
-  );
+  ) ?? 0;
   const history = useQuery(
     api.situpLogs.getHistory,
-    user ? { userId: user._id, limit: 14 } : "skip"
+    user ? { userId: user._id } : "skip"
   );
-
-  const dailyCount = dailyLogs ?? 0;
   const dailyGoal = 100;
   const goalProgress = Math.min(100, Math.round((dailyCount / dailyGoal) * 100));
 
@@ -204,7 +202,6 @@ export default function Dashboard() {
             {/* Camera Counter */}
             <div className="px-4">
               <CameraCounter
-                userId={user?._id ?? "guest"}
                 onSessionEnd={handleSessionEnd}
               />
             </div>
@@ -213,7 +210,7 @@ export default function Dashboard() {
 
         {tab === "battles" && (
           <div className="p-4">
-            <BattleSystem userId={user?._id ?? "guest"} userName={user?.name ?? "Guest"} />
+            <BattleSystem onBack={() => setTab("counter")} />
           </div>
         )}
 
@@ -242,32 +239,17 @@ export default function Dashboard() {
 }
 
 function LeaderboardSection() {
-  const todayLogs = useQuery(api.situpLogs.getTodayLogs);
-
-  const rankings = (() => {
-    if (!todayLogs) return [];
-    const userMap = new Map<string, { userId: string; userName: string; count: number }>();
-    for (const log of todayLogs) {
-      const existing = userMap.get(log.userId);
-      if (existing) {
-        existing.count += log.count;
-      } else {
-        userMap.set(log.userId, {
-          userId: log.userId,
-          userName: log.userName ?? "Anonymous",
-          count: log.count,
-        });
-      }
-    }
-    return Array.from(userMap.values())
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 20);
-  })();
+  const rankings = useQuery(api.situpLogs.getLeaderboard);
 
   return (
     <div className="p-4">
       <h2 className="text-lg font-bold mb-4">Today's Rankings</h2>
-      {rankings.length === 0 ? (
+      {!rankings ? (
+        <div className="clay-card p-8 text-center">
+          <Trophy className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
+          <p className="text-sm text-muted-foreground">Loading rankings...</p>
+        </div>
+      ) : rankings.length === 0 ? (
         <div className="clay-card p-8 text-center">
           <Trophy className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
           <p className="text-sm text-muted-foreground">
@@ -301,7 +283,7 @@ function LeaderboardSection() {
                 <p className="text-sm font-medium truncate">{entry.userName}</p>
               </div>
               <span className="text-sm font-bold text-primary">
-                {entry.count}
+                {entry.total}
               </span>
             </motion.div>
           ))}
