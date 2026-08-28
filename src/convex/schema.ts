@@ -37,7 +37,8 @@ const schema = defineSchema(
       date: v.string(),
       count: v.number(),
       sessionReps: v.number(),
-    }).index("by_user_date", ["userId", "date"]),
+    }).index("by_user_date", ["userId", "date"])
+      .index("by_date", ["date"]),
 
     battles: defineTable({
       creatorId: v.string(),

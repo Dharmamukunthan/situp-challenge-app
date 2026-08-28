@@ -50,8 +50,8 @@ export default function Dashboard() {
   const streak = (() => {
     if (!history || history.length === 0) return 0;
     const sorted = [...history].sort((a, b) => b.date.localeCompare(a.date));
-    const today = getLocalDateStr();
-    let expected = today;
+    // Start from the most recent logged date (could be today or earlier)
+    let expected = sorted[0].date;
     let count = 0;
     for (const log of sorted) {
       if (log.date === expected) {
@@ -59,6 +59,8 @@ export default function Dashboard() {
         const d = new Date(expected);
         d.setDate(d.getDate() - 1);
         expected = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      } else if (log.date > expected) {
+        continue;
       } else {
         break;
       }

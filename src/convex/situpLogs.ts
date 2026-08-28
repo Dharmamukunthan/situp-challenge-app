@@ -76,8 +76,10 @@ export const getLeaderboard = query({
   args: {},
   handler: async (ctx) => {
     const today = getLocalDateStr();
-    const allLogs = await ctx.db.query("situpLogs").collect();
-    const todayLogs = allLogs.filter((l) => l.date === today);
+    const todayLogs = await ctx.db
+      .query("situpLogs")
+      .withIndex("by_date", (q) => q.eq("date", today))
+      .collect();
 
     const byUser: Record<string, { userId: string; total: number }> = {};
     for (const log of todayLogs) {

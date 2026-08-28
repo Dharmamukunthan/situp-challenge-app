@@ -54,6 +54,12 @@ export function BattleSystem({ onBack, initialBattleCode }: BattleSystemProps) {
   const [winner, setWinner] = useState<"me" | "opponent" | "draw" | null>(null);
   const myScoreRef = useRef(0);
   const opponentScoreRef = useRef(0);
+  const durationRef = useRef(duration);
+
+  // Keep durationRef in sync so countdown timer always reads the latest
+  useEffect(() => {
+    durationRef.current = duration;
+  }, [duration]);
 
   const createBattle = useMutation(api.battles.createBattle);
   const joinBattle = useMutation(api.battles.joinBattle);
@@ -79,14 +85,27 @@ export function BattleSystem({ onBack, initialBattleCode }: BattleSystemProps) {
     }
   }, [battle, phase, userId]);
 
-  // Update my score when repCount changes
+  // Update my score when repCount changes (throttled to max once per second)
+  const lastScoreUpdateRef = useRef(0);
   useEffect(() => {
     if (phase === "active" && battleId && userId) {
       setMyScore(repCount);
       myScoreRef.current = repCount;
-      updateScore({ battleId: battleId as any, userId, score: repCount });
+      const now = Date.now();
+      if (now - lastScoreUpdateRef.current > 1000) {
+        lastScoreUpdateRef.current = now;
+        updateScore({ battleId: battleId as any, userId, score: repCount });
+      }
     }
   }, [repCount, phase, battleId, userId, updateScore]);
+
+  // Flush final score when battle ends
+  useEffect(() => {
+    if (phase === "finished" && battleId && userId) {
+      updateScore({ battleId: battleId as any, userId, score: myScoreRef.current });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase]);
 
   // Sync opponent score from battle
   useEffect(() => {
@@ -108,13 +127,13 @@ export function BattleSystem({ onBack, initialBattleCode }: BattleSystemProps) {
         if (c <= 1) {
           clearInterval(timer);
           setPhase("active");
-          setTimeLeft(duration);
+          setTimeLeft(durationRef.current);
           return 0;
         }
         return c - 1;
       });
     }, 1000);
-  }, [duration]);
+  }, []);
 
   // Watch for opponent joining
   useEffect(() => {
@@ -213,6 +232,8 @@ export function BattleSystem({ onBack, initialBattleCode }: BattleSystemProps) {
     setMyScore(0);
     setOpponentScore(0);
     setWinner(null);
+    setDuration(60);
+    setTimeLeft(60);
     resetCount();
   };
 
