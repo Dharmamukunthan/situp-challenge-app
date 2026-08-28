@@ -15,6 +15,7 @@ import {
   RotateCcw,
   Zap,
   ExternalLink,
+  Loader2,
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 
@@ -40,6 +41,8 @@ export function BattleSystem({ onBack, initialBattleCode }: BattleSystemProps) {
   const userId = user?._id ?? getGuestId();
   const [phase, setPhase] = useState<BattlePhase>("lobby");
   const [duration, setDuration] = useState(60);
+  const [isCreating, setIsCreating] = useState(false);
+  const [isJoining, setIsJoining] = useState(false);
   const [battleId, setBattleId] = useState<string | null>(null);
   const [battleCode, setBattleCode] = useState<string>("");
   const [joinCode, setJoinCode] = useState("");
@@ -68,6 +71,13 @@ export function BattleSystem({ onBack, initialBattleCode }: BattleSystemProps) {
     canvasRef,
     phase === "active"
   );
+
+  // Sync duration from the battle document when joining (opponent uses creator's duration)
+  useEffect(() => {
+    if (battle && phase === "waiting" && battle.creatorId !== userId) {
+      setDuration(battle.duration);
+    }
+  }, [battle, phase, userId]);
 
   // Update my score when repCount changes
   useEffect(() => {
@@ -114,6 +124,7 @@ export function BattleSystem({ onBack, initialBattleCode }: BattleSystemProps) {
   }, [battle?.status, phase, startCountdown]);
 
   // Battle timer
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (phase !== "active") return;
     const timer = setInterval(() => {
@@ -140,14 +151,21 @@ export function BattleSystem({ onBack, initialBattleCode }: BattleSystemProps) {
   }, [battleId, endBattle]);
 
   const handleCreateBattle = async () => {
-    const result = await createBattle({ creatorId: userId, duration });
-    setBattleId(result.id);
-    setBattleCode(result.code);
-    setPhase("waiting");
+    if (isCreating) return;
+    setIsCreating(true);
+    try {
+      const result = await createBattle({ creatorId: userId, duration });
+      setBattleId(result.id);
+      setBattleCode(result.code);
+      setPhase("waiting");
+    } finally {
+      setIsCreating(false);
+    }
   };
 
   const handleJoinBattleWithCode = async (code: string) => {
-    if (!code.trim()) return;
+    if (!code.trim() || isJoining) return;
+    setIsJoining(true);
     try {
       const id = await joinBattle({
         battleCode: code.toUpperCase().trim(),
@@ -157,6 +175,8 @@ export function BattleSystem({ onBack, initialBattleCode }: BattleSystemProps) {
       startCountdown();
     } catch {
       alert("Invalid battle code or battle already started");
+    } finally {
+      setIsJoining(false);
     }
   };
 
@@ -165,6 +185,7 @@ export function BattleSystem({ onBack, initialBattleCode }: BattleSystemProps) {
   };
 
   // Auto-join from QR code URL
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (initialBattleCode && phase === "lobby" && userId) {
       setJoinCode(initialBattleCode);
@@ -241,9 +262,9 @@ export function BattleSystem({ onBack, initialBattleCode }: BattleSystemProps) {
           </div>
 
           {/* Create battle */}
-          <Button onClick={handleCreateBattle} className="clay-btn w-full h-11 text-sm font-semibold mb-4">
-            <Swords className="w-4 h-4 mr-2" />
-            Create Battle
+          <Button onClick={handleCreateBattle} disabled={isCreating} className="clay-btn w-full h-11 text-sm font-semibold mb-4">
+            {isCreating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Swords className="w-4 h-4 mr-2" />}
+            {isCreating ? "Creating..." : "Create Battle"}
           </Button>
 
           {/* Join battle */}
@@ -258,8 +279,8 @@ export function BattleSystem({ onBack, initialBattleCode }: BattleSystemProps) {
                 maxLength={6}
                 className="flex-1 h-11 text-center text-base font-mono font-bold tracking-[0.3em] rounded-[var(--clay-radius)] bg-background border border-[var(--border)] px-3 focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
               />
-              <Button onClick={handleJoinBattle} className="clay-btn h-11 px-5 text-sm">
-                Join
+              <Button onClick={handleJoinBattle} disabled={isJoining || !joinCode.trim()} className="clay-btn h-11 px-5 text-sm">
+                {isJoining ? <Loader2 className="w-4 h-4 animate-spin" /> : "Join"}
               </Button>
             </div>
           </div>
@@ -328,7 +349,8 @@ export function BattleSystem({ onBack, initialBattleCode }: BattleSystemProps) {
       <div className="flex flex-col items-center justify-center min-h-[60vh]">
         <div className="clay-counter w-40 h-40 text-7xl font-black animate-pulse">
           {countdown}
-        </div>          <p className="text-xl text-muted-foreground mt-6 font-medium">Stand by</p>
+        </div>
+        <p className="text-xl text-muted-foreground mt-6 font-medium">Stand by</p>
       </div>
     );
   }

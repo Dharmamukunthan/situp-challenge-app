@@ -53,13 +53,7 @@ const schema = defineSchema(
       .index("by_creator", ["creatorId"])
       .index("by_opponent", ["opponentId"]),
 
-    posts: defineTable({
-      userId: v.string(),
-      userName: v.string(),
-      content: v.string(),
-      reps: v.optional(v.number()),
-      createdAt: v.number(),
-    }).index("by_time", ["createdAt"])
+
   },
   {
     schemaValidation: false,

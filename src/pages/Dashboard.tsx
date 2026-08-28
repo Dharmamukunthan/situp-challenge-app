@@ -8,7 +8,6 @@ import {
   Camera,
   Swords,
   Trophy,
-  RefreshCw,
   Sun,
   Moon,
   Shield,
@@ -35,7 +34,6 @@ export default function Dashboard() {
   const [tab, setTab] = useState<Tab>(() => {
     return searchParams.get("battle") ? "battles" as Tab : "counter";
   });
-  const [historyRefreshKey, setHistoryRefreshKey] = useState(0);
   const logSession = useMutation(api.situpLogs.logSession);
 
   const dailyCount = useQuery(
@@ -68,17 +66,10 @@ export default function Dashboard() {
     return count;
   })();
 
-  useEffect(() => {
-    if (dailyCount > 0) {
-      setHistoryRefreshKey((k) => k + 1);
-    }
-  }, [dailyCount]);
-
   const handleSessionEnd = useCallback(async (reps: number) => {
     if (user && reps > 0) {
       await logSession({ userId: user._id, sessionReps: reps });
     }
-    setHistoryRefreshKey((k) => k + 1);
   }, [user, logSession]);
 
   const tabs: { id: Tab; icon: typeof Camera; label: string }[] = [
@@ -109,14 +100,7 @@ export default function Dashboard() {
           >
             {theme === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
           </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="clay-button w-9 h-9"
-            onClick={() => setHistoryRefreshKey((k) => k + 1)}
-          >
-            <RefreshCw className="w-4 h-4" />
-          </Button>            {user && (
+          {user && (
               <Button
                 variant="ghost"
                 size="sm"
