@@ -7,19 +7,20 @@ import { CameraCounter } from "@/components/CameraCounter";
 import { BattleSystem } from "@/components/BattleSystem";
 import { Button } from "@/components/ui/button";
 import { useSearchParams } from "react-router";
+import { motion } from "framer-motion";
 import {
   Sun,
   Moon,
   LogOut,
   Swords,
   Camera,
-  BarChart3,
   Target,
   Flame,
   TrendingUp,
   Shield,
   Medal,
   Home,
+  Trophy,
 } from "lucide-react";
 
 type Tab = "home" | "counter" | "battles" | "leaderboard";
@@ -31,28 +32,7 @@ const navItems: { id: Tab; label: string; icon: typeof Camera }[] = [
   { id: "leaderboard", label: "Leaderboard", icon: Medal },
 ];
 
-const features = [
-  {
-    icon: Camera,
-    title: "Pose Detection",
-    desc: "Computer vision tracks your torso movement through the front camera. Reps counted automatically.",
-  },
-  {
-    icon: Swords,
-    title: "Head-to-Head Battles",
-    desc: "Generate a code, share the QR, and compete in real time. 30-second sprints to 5-minute endurance rounds.",
-  },
-  {
-    icon: BarChart3,
-    title: "Leaderboard",
-    desc: "See who is putting in the most volume today. Rankings update in real time.",
-  },
-  {
-    icon: Target,
-    title: "Session History",
-    desc: "Every session logged. Track daily totals, monitor streaks, and review progress.",
-  },
-];
+
 
 export default function Dashboard() {
   const { user, signOut } = useAuth();
@@ -178,28 +158,112 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {/* Feature cards */}
+            {/* Quick actions */}
             <div className="grid grid-cols-2 gap-3">
-              {features.map((feat) => (
-                <div key={feat.title} className="clay-card p-4">
-                  <div className="w-9 h-9 rounded-[var(--clay-radius)] bg-[var(--primary)]/10 flex items-center justify-center mb-3">
-                    <feat.icon className="w-4 h-4 text-[var(--primary)]" />
-                  </div>
-                  <h4 className="text-sm font-bold text-foreground mb-1">
-                    {feat.title}
-                  </h4>
-                  <p className="text-xs text-muted-foreground leading-relaxed">
-                    {feat.desc}
-                  </p>
+              <button
+                onClick={() => setTab("counter")}
+                className="clay-card p-5 text-left group hover:shadow-lg transition-shadow"
+              >
+                <div className="w-10 h-10 rounded-[var(--clay-radius)] bg-[var(--primary)]/10 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                  <Camera className="w-5 h-5 text-[var(--primary)]" />
                 </div>
-              ))}
+                <h4 className="text-sm font-bold text-foreground mb-1">Start Counting</h4>
+                <p className="text-xs text-muted-foreground">Open camera and count reps</p>
+              </button>
+              <button
+                onClick={() => setTab("battles")}
+                className="clay-card p-5 text-left group hover:shadow-lg transition-shadow"
+              >
+                <div className="w-10 h-10 rounded-[var(--clay-radius)] bg-[var(--primary)]/10 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                  <Swords className="w-5 h-5 text-[var(--primary)]" />
+                </div>
+                <h4 className="text-sm font-bold text-foreground mb-1">Head-to-Head</h4>
+                <p className="text-xs text-muted-foreground">Challenge someone to a battle</p>
+              </button>
+              <button
+                onClick={() => setTab("leaderboard")}
+                className="clay-card p-5 text-left group hover:shadow-lg transition-shadow"
+              >
+                <div className="w-10 h-10 rounded-[var(--clay-radius)] bg-[var(--primary)]/10 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                  <Medal className="w-5 h-5 text-[var(--primary)]" />
+                </div>
+                <h4 className="text-sm font-bold text-foreground mb-1">Leaderboard</h4>
+                <p className="text-xs text-muted-foreground">See today&apos;s rankings</p>
+              </button>
+              <div className="clay-card p-5">
+                <div className="w-10 h-10 rounded-[var(--clay-radius)] bg-[var(--primary)]/10 flex items-center justify-center mb-3">
+                  <Trophy className="w-5 h-5 text-[var(--primary)]" />
+                </div>
+                <h4 className="text-sm font-bold text-foreground mb-1">Daily Goal</h4>
+                <p className="text-xs text-muted-foreground">Target: 100 reps per day</p>
+              </div>
             </div>
           </div>
         )}
 
         {/* ── Counter Tab ── */}
         {tab === "counter" && (
-          <CameraCounter onSessionEnd={handleSessionEnd} dailyGoal={100} />
+          <>
+            {/* Hero */}
+            <motion.section
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5 }}
+              className="text-center mb-6"
+            >
+              <div className="inline-flex items-center gap-2 clay-card px-4 py-2 mb-5">
+                <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                <span className="text-sm font-medium text-muted-foreground">
+                  Camera-Powered Rep Tracking
+                </span>
+              </div>
+
+              <h2 className="text-3xl md:text-4xl font-black text-foreground leading-tight mb-3">
+                Count situps
+                <br />
+                <span className="text-[var(--primary)]">with precision.</span>
+              </h2>
+
+              <p className="text-sm text-muted-foreground max-w-lg mx-auto mb-6 leading-relaxed">
+                Point your front camera, start a session, and let pose detection
+                count every rep. Compete on the leaderboard or challenge someone
+                to a head-to-head battle.
+              </p>
+
+              {/* Hero mockup */}
+              <div className="clay-card-lg p-4 max-w-sm mx-auto mb-6">
+                <div className="aspect-[4/3] rounded-[var(--clay-radius)] bg-gradient-to-br from-[var(--primary)]/15 via-[var(--secondary)]/10 to-[var(--accent)]/15 flex flex-col items-center justify-center relative overflow-hidden">
+                  <div className="clay-counter w-24 h-24 text-4xl font-black mb-3 animate-bounce">
+                    <Trophy className="w-8 h-8" />
+                  </div>
+                  <p className="text-xl font-bold text-foreground">0 reps</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Start counting
+                  </p>
+                  <motion.div
+                    animate={{ y: [-4, 4, -4] }}
+                    transition={{ repeat: Infinity, duration: 2 }}
+                    className="absolute top-3 right-3 clay-pill bg-[var(--accent)]/25 px-2 py-0.5"
+                  >
+                    <span className="text-[10px] font-medium text-foreground">
+                      +1 rep
+                    </span>
+                  </motion.div>
+                  <motion.div
+                    animate={{ y: [4, -4, 4] }}
+                    transition={{ repeat: Infinity, duration: 2.5 }}
+                    className="absolute bottom-4 left-3 clay-pill bg-[var(--primary)]/15 px-2 py-0.5"
+                  >
+                    <span className="text-[10px] font-medium text-foreground">
+                      Goal: 100
+                    </span>
+                  </motion.div>
+                </div>
+              </div>
+            </motion.section>
+
+            <CameraCounter onSessionEnd={handleSessionEnd} dailyGoal={100} />
+          </>
         )}
 
         {/* ── Battle Tab ── */}

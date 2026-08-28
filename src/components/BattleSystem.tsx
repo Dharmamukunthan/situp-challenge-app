@@ -178,37 +178,36 @@ export function BattleSystem({ onBack }: BattleSystemProps) {
   // LOBBY
   if (phase === "lobby") {
     return (
-      <div className="flex flex-col gap-6 w-full max-w-md mx-auto">
-        <div className="clay-card p-6">
-          <div className="flex items-center gap-3 mb-6">
-            <div className="w-12 h-12 rounded-[var(--clay-radius)] bg-[var(--primary)] flex items-center justify-center">
-              <Swords className="w-6 h-6 text-white" />
+      <div className="flex flex-col gap-4 w-full max-w-md mx-auto">
+        <div className="clay-card p-4">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-10 h-10 rounded-[var(--clay-radius)] bg-[var(--primary)] flex items-center justify-center">
+              <Swords className="w-5 h-5 text-white" />
             </div>
             <div>
-              <h2 className="text-xl font-bold text-foreground">Head-to-Head</h2>
-              <p className="text-sm text-muted-foreground">Challenge a friend or stranger to a situp sprint.</p>
+              <h2 className="text-lg font-bold text-foreground">Head-to-Head</h2>
+              <p className="text-xs text-muted-foreground">Challenge someone to a situp sprint.</p>
             </div>
           </div>
 
           {/* Duration picker */}
-          <div className="mb-6">
-            <label className="text-sm font-medium text-foreground mb-3 block">Battle Duration</label>
-            <div className="grid grid-cols-3 gap-3">
+          <div className="mb-4">
+            <label className="text-xs font-medium text-foreground mb-2 block">Duration</label>
+            <div className="grid grid-cols-3 gap-2">
               {[
-                { value: 30, label: "30s", icon: "⚡" },
-                { value: 60, label: "1 min", icon: "🕐" },
-                { value: 300, label: "5 min", icon: "🏆" },
+                { value: 30, label: "30s" },
+                { value: 60, label: "1 min" },
+                { value: 300, label: "5 min" },
               ].map((d) => (
                 <button
                   key={d.value}
                   onClick={() => setDuration(d.value)}
-                  className={`clay-card p-4 text-center transition-all ${
+                  className={`clay-card py-3 text-center transition-all ${
                     duration === d.value
                       ? "ring-2 ring-[var(--primary)] bg-[var(--primary)]/10"
                       : "hover:bg-[var(--accent)]/10"
                   }`}
                 >
-                  <span className="text-2xl block mb-1">{d.icon}</span>
                   <span className="text-sm font-semibold text-foreground">{d.label}</span>
                 </button>
               ))}
@@ -216,31 +215,31 @@ export function BattleSystem({ onBack }: BattleSystemProps) {
           </div>
 
           {/* Create battle */}
-          <Button onClick={handleCreateBattle} className="clay-btn w-full h-12 text-base font-semibold mb-4">
-            <Swords className="w-5 h-5 mr-2" />
+          <Button onClick={handleCreateBattle} className="clay-btn w-full h-11 text-sm font-semibold mb-4">
+            <Swords className="w-4 h-4 mr-2" />
             Create Battle
           </Button>
 
           {/* Join battle */}
-          <div className="clay-inset p-4">
-            <label className="text-sm font-medium text-foreground mb-2 block">Join with Code</label>
+          <div className="clay-inset p-3">
+            <label className="text-xs font-medium text-foreground mb-2 block">Join with Code</label>
             <div className="flex gap-2">
               <input
                 type="text"
                 value={joinCode}
                 onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
-                placeholder="ENTER CODE"
+                placeholder="CODE"
                 maxLength={6}
-                className="flex-1 h-12 text-center text-lg font-mono font-bold tracking-[0.3em] rounded-[var(--clay-radius)] bg-background border border-[var(--border)] px-4 focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
+                className="flex-1 h-11 text-center text-base font-mono font-bold tracking-[0.3em] rounded-[var(--clay-radius)] bg-background border border-[var(--border)] px-3 focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
               />
-              <Button onClick={handleJoinBattle} className="clay-btn h-12 px-6">
+              <Button onClick={handleJoinBattle} className="clay-btn h-11 px-5 text-sm">
                 Join
               </Button>
             </div>
           </div>
         </div>
 
-        <Button onClick={onBack} variant="ghost" className="w-full">
+        <Button onClick={onBack} variant="ghost" className="w-full h-10 text-sm">
           ← Back
         </Button>
       </div>
