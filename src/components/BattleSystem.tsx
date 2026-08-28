@@ -18,15 +18,26 @@ import {
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 
+function getGuestId(): string {
+  const key = "situp-guest-id";
+  let id = localStorage.getItem(key);
+  if (!id) {
+    id = `guest-${Math.random().toString(36).slice(2, 10)}`;
+    localStorage.setItem(key, id);
+  }
+  return id;
+}
+
 type BattlePhase = "lobby" | "waiting" | "countdown" | "active" | "finished";
 
 interface BattleSystemProps {
   onBack: () => void;
+  initialBattleCode?: string;
 }
 
-export function BattleSystem({ onBack }: BattleSystemProps) {
+export function BattleSystem({ onBack, initialBattleCode }: BattleSystemProps) {
   const { user } = useAuth();
-  const userId = user?._id ?? "";
+  const userId = user?._id ?? getGuestId();
   const [phase, setPhase] = useState<BattlePhase>("lobby");
   const [duration, setDuration] = useState(60);
   const [battleId, setBattleId] = useState<string | null>(null);
@@ -79,13 +90,6 @@ export function BattleSystem({ onBack }: BattleSystemProps) {
     }
   }, [battle, userId]);
 
-  // Watch for opponent joining
-  useEffect(() => {
-    if (phase === "waiting" && battle?.status === "active") {
-      startCountdown();
-    }
-  }, [battle?.status, phase]);
-
   const startCountdown = useCallback(() => {
     setPhase("countdown");
     setCountdown(3);
@@ -101,6 +105,13 @@ export function BattleSystem({ onBack }: BattleSystemProps) {
       });
     }, 1000);
   }, [duration]);
+
+  // Watch for opponent joining
+  useEffect(() => {
+    if (phase === "waiting" && battle?.status === "active") {
+      startCountdown();
+    }
+  }, [battle?.status, phase, startCountdown]);
 
   // Battle timer
   useEffect(() => {
@@ -135,11 +146,11 @@ export function BattleSystem({ onBack }: BattleSystemProps) {
     setPhase("waiting");
   };
 
-  const handleJoinBattle = async () => {
-    if (!joinCode.trim()) return;
+  const handleJoinBattleWithCode = async (code: string) => {
+    if (!code.trim()) return;
     try {
       const id = await joinBattle({
-        battleCode: joinCode.toUpperCase().trim(),
+        battleCode: code.toUpperCase().trim(),
         opponentId: userId,
       });
       setBattleId(id);
@@ -148,6 +159,21 @@ export function BattleSystem({ onBack }: BattleSystemProps) {
       alert("Invalid battle code or battle already started");
     }
   };
+
+  const handleJoinBattle = async () => {
+    await handleJoinBattleWithCode(joinCode);
+  };
+
+  // Auto-join from QR code URL
+  useEffect(() => {
+    if (initialBattleCode && phase === "lobby" && userId) {
+      setJoinCode(initialBattleCode);
+      const timer = setTimeout(() => {
+        handleJoinBattleWithCode(initialBattleCode);
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [initialBattleCode]);
 
   const copyCode = () => {
     navigator.clipboard.writeText(battleCode);

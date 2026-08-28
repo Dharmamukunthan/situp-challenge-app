@@ -1,7 +1,8 @@
-import { useState, useEffect } from "react";
-import { useQuery } from "convex/react";
+import { useState, useEffect, useCallback } from "react";
+import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useAuth } from "@/hooks/use-auth";
+import { useSearchParams } from "react-router";
 import { Button } from "@/components/ui/button";
 import {
   Camera,
@@ -30,8 +31,12 @@ function getLocalDateStr(): string {
 export default function Dashboard() {
   const { user, signOut } = useAuth();
   const { theme, toggleTheme } = useTheme();
-  const [tab, setTab] = useState<Tab>("counter");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [tab, setTab] = useState<Tab>(() => {
+    return searchParams.get("battle") ? "battles" as Tab : "counter";
+  });
   const [historyRefreshKey, setHistoryRefreshKey] = useState(0);
+  const logSession = useMutation(api.situpLogs.logSession);
 
   const dailyCount = useQuery(
     api.situpLogs.getTodayCount,
@@ -69,9 +74,12 @@ export default function Dashboard() {
     }
   }, [dailyCount]);
 
-  const handleSessionEnd = () => {
+  const handleSessionEnd = useCallback(async (reps: number) => {
+    if (user && reps > 0) {
+      await logSession({ userId: user._id, sessionReps: reps });
+    }
     setHistoryRefreshKey((k) => k + 1);
-  };
+  }, [user, logSession]);
 
   const tabs: { id: Tab; icon: typeof Camera; label: string }[] = [
     { id: "counter", icon: Camera, label: "Count" },
@@ -210,7 +218,13 @@ export default function Dashboard() {
 
         {tab === "battles" && (
           <div className="p-4">
-            <BattleSystem onBack={() => setTab("counter")} />
+            <BattleSystem
+              onBack={() => {
+                setTab("counter");
+                setSearchParams({});
+              }}
+              initialBattleCode={searchParams.get("battle") ?? undefined}
+            />
           </div>
         )}
 
