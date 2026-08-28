@@ -1,31 +1,7 @@
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
-import { useNavigate } from "react-router";
-import { Camera, Swords, Trophy, BarChart3, ChevronRight, Shield, Sun, Moon } from "lucide-react";
+import { useNavigate } from "react-router";import { ChevronRight, Shield, Sun, Moon, Trophy } from "lucide-react";
 import { useTheme } from "@/components/ThemeProvider";
-
-const features = [
-  {
-    icon: Camera,
-    title: "Pose Detection",
-    desc: "Computer vision tracks your torso movement through the front camera. Reps are counted automatically — no manual input required.",
-  },
-  {
-    icon: Swords,
-    title: "Head-to-Head Battles",
-    desc: "Generate a battle code, share the QR, and compete in real time. 10-second sprints or 5-minute endurance rounds.",
-  },
-  {
-    icon: BarChart3,
-    title: "Leaderboard",
-    desc: "See who is putting in the most volume today. Rankings update in real time as sessions are logged.",
-  },
-  {
-    icon: Trophy,
-    title: "Session History",
-    desc: "Every session is logged. Track your daily totals, monitor streaks, and review your progress over time.",
-  },
-];
 
 export default function Landing() {
   const navigate = useNavigate();
@@ -141,44 +117,6 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* Features */}
-      <section className="px-4 py-20 md:py-28">
-        <div className="max-w-5xl mx-auto">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            className="text-center mb-14"
-          >
-            <h2 className="text-3xl md:text-4xl font-black text-foreground mb-4">
-              Built for daily training
-            </h2>
-            <p className="text-muted-foreground text-lg">
-              Everything you need to track volume and compete
-            </p>
-          </motion.div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {features.map((feat, i) => (
-              <motion.div
-                key={feat.title}
-                initial={{ opacity: 0, y: 20 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ delay: i * 0.1 }}
-                className="clay-card p-6 group hover:shadow-lg transition-shadow"
-              >
-                <div className="w-12 h-12 rounded-[var(--clay-radius)] bg-[var(--primary)]/10 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-                  <feat.icon className="w-6 h-6 text-[var(--primary)]" />
-                </div>
-                <h3 className="text-lg font-bold text-foreground mb-2">{feat.title}</h3>
-                <p className="text-sm text-muted-foreground leading-relaxed">{feat.desc}</p>
-              </motion.div>
-            ))}
-          </div>
-        </div>
-      </section>
-
       {/* CTA */}
       <section className="px-4 py-16">
         <div className="max-w-3xl mx-auto">
@@ -189,18 +127,6 @@ export default function Landing() {
             <p className="text-muted-foreground text-lg mb-8 max-w-lg mx-auto">
               No app to install. No hardware required. Just your browser, your camera, and 100 reps.
             </p>
-            <div className="grid grid-cols-3 gap-6 mb-8">
-              {[
-                { val: "100+", label: "Reps / Day" },
-                { val: "1v1", label: "Battles" },
-                { val: "0$", label: "Always Free" },
-              ].map((stat) => (
-                <div key={stat.label}>
-                  <p className="text-3xl font-black text-[var(--primary)]">{stat.val}</p>
-                  <p className="text-sm text-muted-foreground mt-1">{stat.label}</p>
-                </div>
-              ))}
-            </div>
             <Button
               onClick={() => navigate("/auth")}
               className="clay-btn h-14 px-10 text-lg font-semibold"
