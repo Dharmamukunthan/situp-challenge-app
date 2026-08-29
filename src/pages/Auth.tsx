@@ -16,7 +16,9 @@ import {
 
 import { useAuth } from "@/hooks/use-auth";
 import logo from "@/assets/logo.svg";
-import { ArrowRight, Loader2, Mail, UserX, User } from "lucide-react";
+import { ArrowRight, Loader2, Mail, User } from "lucide-react";
+import { useMutation } from "convex/react";
+import { api } from "@/convex/_generated/api";
 import { Suspense, useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 
@@ -94,32 +96,20 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
     }
   };
 
-  const handleUsernameLogin = async () => {
-    if (!usernameInput.trim()) return;
-    setIsLoading(true);
-    setError(null);
-    try {
-      // Sign in anonymously first, then the user will set their username in the dashboard
-      await signIn("anonymous");
-      navigate(redirect);
-    } catch (error) {
-      setError(`Failed to sign in: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      setIsLoading(false);
-    }
-  };
+  const setUsernameMutation = useMutation(api.username.setUsername);
 
-  const handleGuestLogin = async () => {
+  const handleUsernameLogin = async () => {
+    const name = usernameInput.trim().toLowerCase();
+    if (!name) return;
     setIsLoading(true);
     setError(null);
     try {
-      console.log("Attempting anonymous sign in...");
+      localStorage.setItem("situp-pending-username", name);
       await signIn("anonymous");
-      console.log("Anonymous sign in successful");
       navigate(redirect);
     } catch (error) {
-      console.error("Guest login error:", error);
-      console.error("Error details:", JSON.stringify(error, null, 2));
-      setError(`Failed to sign in as guest: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      localStorage.removeItem("situp-pending-username");
+      setError(`Failed to sign in: ${error instanceof Error ? error.message : 'Unknown error'}`);
       setIsLoading(false);
     }
   };
@@ -194,33 +184,23 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                       </div>
                     </div>
                     
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="w-full mt-4"
-                      onClick={handleUsernameLogin}
-                      disabled={isLoading || !usernameInput.trim()}
-                    >
-                      <User className="mr-2 h-4 w-4" />
-                      Play with Username
-                    </Button>
                     <input
                       type="text"
                       value={usernameInput}
                       onChange={(e) => setUsernameInput(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ""))}
                       placeholder="Pick a username"
                       maxLength={16}
-                      className="w-full h-10 text-center text-sm font-semibold rounded-lg bg-background border border-[var(--border)] px-3 mt-2 focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
+                      className="w-full h-11 text-center text-sm font-semibold rounded-lg bg-background border border-[var(--border)] px-3 mt-4 focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
                     />
                     <Button
                       type="button"
                       variant="outline"
-                      className="w-full mt-3"
-                      onClick={handleGuestLogin}
-                      disabled={isLoading}
+                      className="w-full mt-3 h-11"
+                      onClick={handleUsernameLogin}
+                      disabled={isLoading || !usernameInput.trim()}
                     >
-                      <UserX className="mr-2 h-4 w-4" />
-                      Continue as Guest
+                      <User className="mr-2 h-4 w-4" />
+                      Play with Username
                     </Button>
                   </div>
                 </CardContent>

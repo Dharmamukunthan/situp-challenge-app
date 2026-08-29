@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useAuth } from "@/hooks/use-auth";
@@ -28,66 +28,7 @@ function getLocalDateStr(): string {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
 }
 
-// Username prompt for users without one
-function UsernamePrompt({ userId, onDone }: { userId: string; onDone: () => void }) {
-  const [input, setInput] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const checkUsername = useQuery(api.username.checkUsername, input.length >= 2 ? { username: input } : "skip");
-  const setUsername = useMutation(api.username.setUsername);
 
-  const handleSubmit = async () => {
-    if (!input.trim() || loading) return;
-    setLoading(true);
-    setError(null);
-    try {
-      await setUsername({ userId, username: input.trim().toLowerCase() });
-      onDone();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to set username");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 z-[100] bg-background/90 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="clay-card-lg p-6 w-full max-w-sm">
-        <div className="w-14 h-14 rounded-full bg-[var(--primary)]/10 flex items-center justify-center mx-auto mb-4">
-          <Shield className="w-7 h-7 text-[var(--primary)]" />
-        </div>
-        <h2 className="text-xl font-bold text-center text-foreground mb-1">Pick a Username</h2>
-        <p className="text-sm text-muted-foreground text-center mb-5">
-          Choose a unique name. This identifies you in battles and the leaderboard. It cannot be changed later.
-        </p>
-        <input
-          type="text"
-          value={input}
-          onChange={(e) => { setInput(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, "")); setError(null); }}
-          placeholder="e.g. situpking42"
-          maxLength={16}
-          className="w-full h-12 text-center text-lg font-semibold rounded-[var(--clay-radius)] bg-background border border-[var(--border)] px-4 focus:outline-none focus:ring-2 focus:ring-[var(--primary)] mb-2"
-          onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
-        />
-        {/* Live availability check */}
-        {input.length >= 2 && checkUsername && (
-          <p className={`text-xs text-center mb-3 ${checkUsername.valid ? "text-green-500" : "text-red-400"}`}>
-            {checkUsername.valid ? "✓ Available" : checkUsername.error}
-          </p>
-        )}
-        {error && <p className="text-xs text-center text-red-400 mb-3">{error}</p>}
-        <Button
-          onClick={handleSubmit}
-          disabled={loading || !input.trim() || (checkUsername ? !checkUsername.valid : false)}
-          className="clay-btn w-full h-12 text-sm font-semibold"
-        >
-          {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
-          {loading ? "Setting..." : "Confirm Username"}
-        </Button>
-      </div>
-    </div>
-  );
-}
 
 export default function Dashboard() {
   const { user, signOut } = useAuth();
@@ -96,8 +37,7 @@ export default function Dashboard() {
   const [tab, setTab] = useState<Tab>(() => {
     return searchParams.get("battle") ? "battles" as Tab : "counter";
   });
-  const [showUsernamePrompt, setShowUsernamePrompt] = useState(false);
-
+  const setUsernameMutation = useMutation(api.username.setUsername);
   const logSession = useMutation(api.situpLogs.logSession);
 
   const dailyCount = useQuery(
@@ -137,17 +77,25 @@ export default function Dashboard() {
     }
   }, [user, logSession]);
 
+  // Save pending username from auth page on mount
+  useEffect(() => {
+    if (user && !user.username) {
+      const pending = localStorage.getItem("situp-pending-username");
+      if (pending) {
+        setUsernameMutation({ userId: user._id, username: pending }).then(() => {
+          localStorage.removeItem("situp-pending-username");
+        }).catch(() => {
+          // Username might already be set or taken — ignore
+          localStorage.removeItem("situp-pending-username");
+        });
+      }
+    }
+  }, [user, setUsernameMutation]);
+
   const handleTabChange = (newTab: Tab) => {
-    if (newTab === "battles") {
-      if (!user) {
-        // Need to be signed in for battles
-        window.location.href = "/auth";
-        return;
-      }
-      if (!user.username) {
-        setShowUsernamePrompt(true);
-        return;
-      }
+    if (newTab === "battles" && !user) {
+      window.location.href = "/auth";
+      return;
     }
     setTab(newTab);
   };
@@ -163,14 +111,6 @@ export default function Dashboard() {
 
   return (
     <div className="min-h-screen flex flex-col">
-      {/* Username prompt overlay */}
-      {showUsernamePrompt && user && (
-        <UsernamePrompt
-          userId={user._id}
-          onDone={() => { setShowUsernamePrompt(false); setTab("battles"); }}
-        />
-      )}
-
       {/* Header */}
       <header className="clay-card rounded-t-none border-b border-border px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-3">
