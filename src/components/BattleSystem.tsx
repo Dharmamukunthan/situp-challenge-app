@@ -211,23 +211,6 @@ export function BattleSystem({ onBack, initialBattleCode, userId, username }: Ba
     }
   }, [getMyMatch, phase, startCountdown]);
 
-  // Battle timer
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => {
-    if (phase !== "active") return;
-    const timer = setInterval(() => {
-      setTimeLeft((t) => {
-        if (t <= 1) {
-          clearInterval(timer);
-          finishBattle();
-          return 0;
-        }
-        return t - 1;
-      });
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [phase]);
-
   const finishBattle = useCallback(() => {
     setPhase("finished");
     if (battleId) endBattle({ battleId: battleId as any });
@@ -237,6 +220,33 @@ export function BattleSystem({ onBack, initialBattleCode, userId, username }: Ba
     else if (opp > my) setWinner("opponent");
     else setWinner("draw");
   }, [battleId, endBattle]);
+
+  // Use ref so timer always calls latest finishBattle (avoids stale closure)
+  const finishBattleRef = useRef(finishBattle);
+  useEffect(() => {
+    finishBattleRef.current = finishBattle;
+  }, [finishBattle]);
+
+  // Battle timer
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (phase !== "active") return;
+    // Ensure timer has a valid starting duration
+    const startTimeLeft = durationRef.current > 0 ? durationRef.current : 60;
+    setTimeLeft(startTimeLeft);
+    const timer = setInterval(() => {
+      setTimeLeft((t) => {
+        if (t <= 1) {
+          clearInterval(timer);
+          // Call via ref to avoid stale closure
+          finishBattleRef.current();
+          return 0;
+        }
+        return t - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [phase]);
 
   // --- Random ---
   const handleFindMatch = async () => {
