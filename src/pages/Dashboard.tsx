@@ -82,12 +82,14 @@ export default function Dashboard() {
     if (user && !user.username) {
       const pending = localStorage.getItem("situp-pending-username");
       if (pending) {
-        setUsernameMutation({ userId: user._id, username: pending }).then(() => {
-          localStorage.removeItem("situp-pending-username");
-        }).catch(() => {
-          // Username might already be set or taken — ignore
-          localStorage.removeItem("situp-pending-username");
-        });
+        setUsernameMutation({ userId: user._id, username: pending })
+          .then(() => {
+            localStorage.removeItem("situp-pending-username");
+          })
+          .catch((err) => {
+            console.error("[Dashboard] Failed to save username:", err);
+            localStorage.removeItem("situp-pending-username");
+          });
       }
     }
   }, [user, setUsernameMutation]);
@@ -99,6 +101,10 @@ export default function Dashboard() {
     }
     setTab(newTab);
   };
+
+  // Debug: log username state
+  // eslint-disable-next-line
+  console.log("[Dashboard] user:", user?.username, user?.name, user?._id);
 
   const tabs: { id: Tab; icon: typeof Camera; label: string }[] = [
     { id: "counter", icon: Camera, label: "Count" },
@@ -119,7 +125,7 @@ export default function Dashboard() {
           </div>
           <div>
             <h1 className="font-semibold text-sm">Situp Challenge</h1>
-            <p className="text-xs text-muted-foreground">{user?.username ?? user?.name ?? "Guest"}</p>
+            <p className="text-xs text-muted-foreground">{user?.username ?? user?.name ?? localStorage.getItem("situp-pending-username") ?? "Guest"}</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -231,7 +237,7 @@ export default function Dashboard() {
           </div>
         )}
 
-        {tab === "battles" && user && user.username && (
+        {tab === "battles" && user && (
           <div className="p-4">
             <BattleSystem
               onBack={() => {
