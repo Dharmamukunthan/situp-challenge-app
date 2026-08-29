@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../convex/_generated/api";
-import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { usePoseDetection } from "@/hooks/usePoseDetection";
 import {
@@ -16,29 +15,25 @@ import {
   Zap,
   ExternalLink,
   Loader2,
+  Globe,
+  Lock,
+  Search,
+  X,
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 
-function getGuestId(): string {
-  const key = "situp-guest-id";
-  let id = localStorage.getItem(key);
-  if (!id) {
-    id = `guest-${Math.random().toString(36).slice(2, 10)}`;
-    localStorage.setItem(key, id);
-  }
-  return id;
-}
-
-type BattlePhase = "lobby" | "waiting" | "countdown" | "active" | "finished";
+type BattlePhase = "lobby" | "searching" | "waiting" | "countdown" | "active" | "finished";
+type BattleMode = "random" | "private";
 
 interface BattleSystemProps {
   onBack: () => void;
   initialBattleCode?: string;
+  userId: string;
+  username: string;
 }
 
-export function BattleSystem({ onBack, initialBattleCode }: BattleSystemProps) {
-  const { user } = useAuth();
-  const userId = user?._id ?? getGuestId();
+export function BattleSystem({ onBack, initialBattleCode, userId, username }: BattleSystemProps) {
+  const [mode, setMode] = useState<BattleMode | null>(initialBattleCode ? "private" : null);
   const [phase, setPhase] = useState<BattlePhase>("lobby");
   const [duration, setDuration] = useState(60);
   const [isCreating, setIsCreating] = useState(false);
@@ -56,20 +51,27 @@ export function BattleSystem({ onBack, initialBattleCode }: BattleSystemProps) {
   const opponentScoreRef = useRef(0);
   const durationRef = useRef(duration);
 
-  // Keep durationRef in sync so countdown timer always reads the latest
   useEffect(() => {
     durationRef.current = duration;
   }, [duration]);
 
+  // Convex mutations/queries
   const createBattle = useMutation(api.battles.createBattle);
   const joinBattle = useMutation(api.battles.joinBattle);
   const updateScore = useMutation(api.battles.updateScore);
   const endBattle = useMutation(api.battles.endBattle);
+  const findMatch = useMutation(api.matchmaking.findMatch);
+  const cancelMatch = useMutation(api.matchmaking.cancelMatch);
+  const getMyMatch = useQuery(
+    api.matchmaking.getMyMatch,
+    phase === "searching" ? { userId } : "skip"
+  );
   const battle = useQuery(
     api.battles.getBattle,
     battleId ? { battleId: battleId as any } : "skip"
   );
 
+  // Camera
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const { repCount, resetCount, error } = usePoseDetection(
@@ -78,18 +80,17 @@ export function BattleSystem({ onBack, initialBattleCode }: BattleSystemProps) {
     phase === "active"
   );
 
-  // Sync duration from the battle document whenever it loads and we're not the creator.
-  // This must fire for both the creator (waiting phase) and the joiner (countdown phase).
+  // Sync duration from battle doc (for joiners)
   useEffect(() => {
     if (battle && battle.creatorId !== userId) {
       setDuration(battle.duration);
     }
   }, [battle, userId]);
 
-  // Update my score when repCount changes (throttled to max once per second)
+  // Update my score (throttled)
   const lastScoreUpdateRef = useRef(0);
   useEffect(() => {
-    if (phase === "active" && battleId && userId) {
+    if (phase === "active" && battleId) {
       setMyScore(repCount);
       myScoreRef.current = repCount;
       const now = Date.now();
@@ -100,17 +101,17 @@ export function BattleSystem({ onBack, initialBattleCode }: BattleSystemProps) {
     }
   }, [repCount, phase, battleId, userId, updateScore]);
 
-  // Flush final score when battle ends
+  // Flush final score on battle end
   useEffect(() => {
-    if (phase === "finished" && battleId && userId) {
+    if (phase === "finished" && battleId) {
       updateScore({ battleId: battleId as any, userId, score: myScoreRef.current });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase]);
 
-  // Sync opponent score from battle
+  // Sync opponent score
   useEffect(() => {
-    if (!battle || !userId) return;
+    if (!battle) return;
     if (battle.creatorId === userId) {
       setOpponentScore(battle.opponentScore);
       opponentScoreRef.current = battle.opponentScore;
@@ -120,6 +121,7 @@ export function BattleSystem({ onBack, initialBattleCode }: BattleSystemProps) {
     }
   }, [battle, userId]);
 
+  // Start countdown
   const startCountdown = useCallback(() => {
     setPhase("countdown");
     setCountdown(3);
@@ -136,12 +138,32 @@ export function BattleSystem({ onBack, initialBattleCode }: BattleSystemProps) {
     }, 1000);
   }, []);
 
-  // Watch for opponent joining
+  // Watch for opponent joining (private room waiting)
   useEffect(() => {
     if (phase === "waiting" && battle?.status === "active") {
       startCountdown();
     }
   }, [battle?.status, phase, startCountdown]);
+
+  // Watch for match found (random matchmaking)
+  useEffect(() => {
+    if (phase === "searching" && getMyMatch?.battleId) {
+      setBattleId(getMyMatch.battleId);
+      setPhase("countdown");
+      setCountdown(3);
+      const timer = setInterval(() => {
+        setCountdown((c) => {
+          if (c <= 1) {
+            clearInterval(timer);
+            setPhase("active");
+            setTimeLeft(durationRef.current);
+            return 0;
+          }
+          return c - 1;
+        });
+      }, 1000);
+    }
+  }, [getMyMatch, phase]);
 
   // Battle timer
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -170,7 +192,33 @@ export function BattleSystem({ onBack, initialBattleCode }: BattleSystemProps) {
     else setWinner("draw");
   }, [battleId, endBattle]);
 
-  const handleCreateBattle = async () => {
+  // --- Random Match ---
+  const handleFindMatch = async () => {
+    if (isCreating) return;
+    setIsCreating(true);
+    try {
+      setPhase("searching");
+      const result = await findMatch({ userId, username, duration });
+      if (result) {
+        // Immediately matched
+        setBattleId(result);
+        startCountdown();
+      }
+      // Otherwise polling effect will detect the match
+    } catch {
+      setPhase("lobby");
+    } finally {
+      setIsCreating(false);
+    }
+  };
+
+  const handleCancelSearch = async () => {
+    await cancelMatch({ userId });
+    setPhase("lobby");
+  };
+
+  // --- Private Room ---
+  const handleCreateRoom = async () => {
     if (isCreating) return;
     setIsCreating(true);
     try {
@@ -183,7 +231,7 @@ export function BattleSystem({ onBack, initialBattleCode }: BattleSystemProps) {
     }
   };
 
-  const handleJoinBattleWithCode = async (code: string) => {
+  const handleJoinWithCode = async (code: string) => {
     if (!code.trim() || isJoining) return;
     setIsJoining(true);
     try {
@@ -200,17 +248,13 @@ export function BattleSystem({ onBack, initialBattleCode }: BattleSystemProps) {
     }
   };
 
-  const handleJoinBattle = async () => {
-    await handleJoinBattleWithCode(joinCode);
-  };
-
   // Auto-join from QR code URL
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
-    if (initialBattleCode && phase === "lobby" && userId) {
+    if (initialBattleCode && phase === "lobby" && mode === "private") {
       setJoinCode(initialBattleCode);
       const timer = setTimeout(() => {
-        handleJoinBattleWithCode(initialBattleCode);
+        handleJoinWithCode(initialBattleCode);
       }, 500);
       return () => clearTimeout(timer);
     }
@@ -222,11 +266,10 @@ export function BattleSystem({ onBack, initialBattleCode }: BattleSystemProps) {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const getBattleUrl = () => {
-    return `${window.location.origin}/dashboard?battle=${battleCode}`;
-  };
+  const getBattleUrl = () => `${window.location.origin}/dashboard?battle=${battleCode}`;
 
-  const resetBattle = () => {
+  const resetAll = () => {
+    setMode(null);
     setPhase("lobby");
     setBattleId(null);
     setBattleCode("");
@@ -244,8 +287,10 @@ export function BattleSystem({ onBack, initialBattleCode }: BattleSystemProps) {
     return `${m}:${sec.toString().padStart(2, "0")}`;
   };
 
-  // LOBBY
-  if (phase === "lobby") {
+  // ========================================
+  // MODE SELECTOR — shown when no mode chosen
+  // ========================================
+  if (!mode) {
     return (
       <div className="flex flex-col gap-4 w-full max-w-md mx-auto">
         <div className="clay-card p-4">
@@ -255,7 +300,120 @@ export function BattleSystem({ onBack, initialBattleCode }: BattleSystemProps) {
             </div>
             <div>
               <h2 className="text-lg font-bold text-foreground">Head-to-Head</h2>
-              <p className="text-xs text-muted-foreground">Challenge someone to a situp sprint.</p>
+              <p className="text-xs text-muted-foreground">Choose how you want to compete.</p>
+            </div>
+          </div>
+
+          {/* Duration picker — always visible before choosing mode */}
+          <div className="mb-4">
+            <label className="text-xs font-medium text-foreground mb-2 block">Duration</label>
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                { value: 30, label: "30s" },
+                { value: 60, label: "1 min" },
+                { value: 300, label: "5 min" },
+              ].map((d) => (
+                <button
+                  key={d.value}
+                  onClick={() => setDuration(d.value)}
+                  className={`clay-card py-3 text-center transition-all ${
+                    duration === d.value
+                      ? "ring-2 ring-[var(--primary)] bg-[var(--primary)]/10"
+                      : "hover:bg-[var(--accent)]/10"
+                  }`}
+                >
+                  <span className="text-sm font-semibold text-foreground">{d.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Two mode buttons */}
+          <button
+            onClick={() => setMode("random")}
+            className="clay-card w-full p-4 flex items-center gap-3 mb-3 hover:bg-[var(--accent)]/10 transition-all text-left"
+          >
+            <div className="w-12 h-12 rounded-[var(--clay-radius)] bg-[var(--primary)]/10 flex items-center justify-center shrink-0">
+              <Globe className="w-6 h-6 text-[var(--primary)]" />
+            </div>
+            <div>
+              <p className="font-bold text-foreground">Random Match</p>
+              <p className="text-xs text-muted-foreground">Compete against a random online player</p>
+            </div>
+          </button>
+
+          <button
+            onClick={() => setMode("private")}
+            className="clay-card w-full p-4 flex items-center gap-3 hover:bg-[var(--accent)]/10 transition-all text-left"
+          >
+            <div className="w-12 h-12 rounded-[var(--clay-radius)] bg-[var(--accent)]/20 flex items-center justify-center shrink-0">
+              <Lock className="w-6 h-6 text-[var(--accent-foreground)]" />
+            </div>
+            <div>
+              <p className="font-bold text-foreground">Private Room</p>
+              <p className="text-xs text-muted-foreground">Create a room and invite friends with a code</p>
+            </div>
+          </button>
+        </div>
+
+        <Button onClick={onBack} variant="ghost" className="w-full h-10 text-sm">
+          ← Back
+        </Button>
+      </div>
+    );
+  }
+
+  // ========================================
+  // RANDOM MATCH — searching
+  // ========================================
+  if (mode === "random" && phase === "searching") {
+    return (
+      <div className="flex flex-col gap-6 w-full max-w-md mx-auto items-center">
+        <div className="clay-card-lg p-8 text-center w-full">
+          <div className="w-16 h-16 rounded-[var(--clay-radius)] bg-[var(--primary)]/10 flex items-center justify-center mx-auto mb-4">
+            <Search className="w-8 h-8 text-[var(--primary)] animate-pulse" />
+          </div>
+          <h2 className="text-2xl font-bold text-foreground mb-2">Finding opponent</h2>
+          <p className="text-muted-foreground mb-4">
+            Searching for a player with {duration >= 60 ? `${duration / 60} min` : `${duration}s`} duration...
+          </p>
+
+          <div className="flex justify-center gap-1 mb-6">
+            {[0, 1, 2].map((i) => (
+              <div
+                key={i}
+                className="w-3 h-3 rounded-full bg-[var(--primary)] animate-bounce"
+                style={{ animationDelay: `${i * 0.15}s` }}
+              />
+            ))}
+          </div>
+
+          <p className="text-xs text-muted-foreground mb-4">
+            You: <span className="font-semibold text-foreground">{username}</span>
+          </p>
+        </div>
+
+        <Button onClick={handleCancelSearch} variant="ghost" className="w-full">
+          Cancel
+        </Button>
+      </div>
+    );
+  }
+
+  // ========================================
+  // PRIVATE ROOM — lobby (create / join)
+  // ========================================
+  if (mode === "private" && phase === "lobby") {
+    return (
+      <div className="flex flex-col gap-4 w-full max-w-md mx-auto">
+        <div className="clay-card p-4">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-10 h-10 rounded-[var(--clay-radius)] bg-[var(--accent)]/20 flex items-center justify-center">
+              <Lock className="w-5 h-5 text-[var(--accent-foreground)]" />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-foreground">Private Room</h2>
+              <p className="text-xs text-muted-foreground">Create a room or join with a code.</p>
             </div>
           </div>
 
@@ -283,13 +441,13 @@ export function BattleSystem({ onBack, initialBattleCode }: BattleSystemProps) {
             </div>
           </div>
 
-          {/* Create battle */}
-          <Button onClick={handleCreateBattle} disabled={isCreating} className="clay-btn w-full h-11 text-sm font-semibold mb-4">
+          {/* Create room */}
+          <Button onClick={handleCreateRoom} disabled={isCreating} className="clay-btn w-full h-11 text-sm font-semibold mb-4">
             {isCreating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Swords className="w-4 h-4 mr-2" />}
-            {isCreating ? "Creating..." : "Create Battle"}
+            {isCreating ? "Creating..." : "Create Room"}
           </Button>
 
-          {/* Join battle */}
+          {/* Join with code */}
           <div className="clay-inset p-3">
             <label className="text-xs font-medium text-foreground mb-2 block">Join with Code</label>
             <div className="flex gap-2">
@@ -301,21 +459,23 @@ export function BattleSystem({ onBack, initialBattleCode }: BattleSystemProps) {
                 maxLength={6}
                 className="flex-1 h-11 text-center text-base font-mono font-bold tracking-[0.3em] rounded-[var(--clay-radius)] bg-background border border-[var(--border)] px-3 focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
               />
-              <Button onClick={handleJoinBattle} disabled={isJoining || !joinCode.trim()} className="clay-btn h-11 px-5 text-sm">
+              <Button onClick={() => handleJoinWithCode(joinCode)} disabled={isJoining || !joinCode.trim()} className="clay-btn h-11 px-5 text-sm">
                 {isJoining ? <Loader2 className="w-4 h-4 animate-spin" /> : "Join"}
               </Button>
             </div>
           </div>
         </div>
 
-        <Button onClick={onBack} variant="ghost" className="w-full h-10 text-sm">
+        <Button onClick={() => setMode(null)} variant="ghost" className="w-full h-10 text-sm">
           ← Back
         </Button>
       </div>
     );
   }
 
-  // WAITING
+  // ========================================
+  // PRIVATE ROOM — waiting for friend to join
+  // ========================================
   if (phase === "waiting") {
     return (
       <div className="flex flex-col gap-6 w-full max-w-md mx-auto items-center">
@@ -328,11 +488,11 @@ export function BattleSystem({ onBack, initialBattleCode }: BattleSystemProps) {
 
           {/* Battle code */}
           <div className="clay-inset p-4 mb-4">
-            <p className="text-xs text-muted-foreground mb-1">Battle Code</p>
+            <p className="text-xs text-muted-foreground mb-1">Room Code</p>
             <p className="text-4xl font-mono font-bold tracking-[0.3em] text-foreground">{battleCode}</p>
           </div>
 
-          {/* Copy & share */}
+          {/* Copy */}
           <div className="flex gap-2 mb-6">
             <Button onClick={copyCode} className="clay-btn flex-1 h-12">
               {copied ? <Check className="w-5 h-5 mr-2" /> : <Copy className="w-5 h-5 mr-2" />}
@@ -344,9 +504,8 @@ export function BattleSystem({ onBack, initialBattleCode }: BattleSystemProps) {
           <div className="clay-card p-6 inline-block">
             <QRCodeSVG value={getBattleUrl()} size={180} bgColor="transparent" fgColor="var(--foreground)" />
           </div>
-          <p className="text-xs text-muted-foreground mt-3">Scan to join this match</p>
+          <p className="text-xs text-muted-foreground mt-3">Scan to join this room</p>
 
-          {/* Waiting animation */}
           <div className="flex justify-center gap-1 mt-6">
             {[0, 1, 2].map((i) => (
               <div
@@ -358,14 +517,16 @@ export function BattleSystem({ onBack, initialBattleCode }: BattleSystemProps) {
           </div>
         </div>
 
-        <Button onClick={resetBattle} variant="ghost" className="w-full">
-          Cancel Battle
+        <Button onClick={resetAll} variant="ghost" className="w-full">
+          Cancel Room
         </Button>
       </div>
     );
   }
 
-  // COUNTDOWN
+  // ========================================
+  // COUNTDOWN (shared by both modes)
+  // ========================================
   if (phase === "countdown") {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh]">
@@ -377,11 +538,12 @@ export function BattleSystem({ onBack, initialBattleCode }: BattleSystemProps) {
     );
   }
 
-  // ACTIVE BATTLE
+  // ========================================
+  // ACTIVE BATTLE (shared)
+  // ========================================
   if (phase === "active") {
     return (
       <div className="flex flex-col gap-4 w-full max-w-md mx-auto">
-        {/* Timer */}
         <div className="clay-card-lg p-4 text-center">
           <div className="flex items-center justify-center gap-2 mb-1">
             <Clock className="w-5 h-5 text-[var(--primary)]" />
@@ -391,7 +553,6 @@ export function BattleSystem({ onBack, initialBattleCode }: BattleSystemProps) {
           </div>
         </div>
 
-        {/* Scoreboard */}
         <div className="grid grid-cols-2 gap-3">
           <div className="clay-card p-4 text-center ring-2 ring-[var(--primary)]/50">
             <p className="text-xs text-muted-foreground mb-1">You</p>
@@ -403,7 +564,6 @@ export function BattleSystem({ onBack, initialBattleCode }: BattleSystemProps) {
           </div>
         </div>
 
-        {/* Camera */}
         <div className="relative clay-card-lg overflow-hidden">
           <div className="aspect-[4/3] bg-muted">
             <video
@@ -418,7 +578,6 @@ export function BattleSystem({ onBack, initialBattleCode }: BattleSystemProps) {
               className="absolute inset-0 w-full h-full object-cover rounded-[var(--clay-radius)]"
               style={{ transform: "scaleX(-1)" }}
             />
-            {/* Rep overlay */}
             <div className="absolute top-3 left-3 clay-pill bg-background/80 backdrop-blur-sm px-4 py-2">
               <div className="flex items-center gap-2">
                 <Zap className="w-4 h-4 text-[var(--primary)]" />
@@ -433,7 +592,7 @@ export function BattleSystem({ onBack, initialBattleCode }: BattleSystemProps) {
             {error === "CAMERA_BLOCKED_IFRAME" ? (
               <div className="text-center">
                 <p className="text-sm font-medium text-foreground mb-1">Camera unavailable in preview</p>
-                <p className="text-xs text-muted-foreground mb-2">Open in a full tab to use the camera during battles.</p>
+                <p className="text-xs text-muted-foreground mb-2">Open in a full tab to use the camera.</p>
                 <Button
                   onClick={() => window.open(window.location.href, "_blank")}
                   className="clay-btn h-8 px-4 text-xs"
@@ -451,7 +610,9 @@ export function BattleSystem({ onBack, initialBattleCode }: BattleSystemProps) {
     );
   }
 
-  // FINISHED
+  // ========================================
+  // FINISHED (shared)
+  // ========================================
   return (
     <div className="flex flex-col gap-6 w-full max-w-md mx-auto items-center">
       <div className="clay-card-lg p-8 text-center w-full">
@@ -480,7 +641,7 @@ export function BattleSystem({ onBack, initialBattleCode }: BattleSystemProps) {
       </div>
 
       <div className="flex gap-3 w-full">
-        <Button onClick={resetBattle} className="clay-btn flex-1 h-12">
+        <Button onClick={resetAll} className="clay-btn flex-1 h-12">
           <RotateCcw className="w-5 h-5 mr-2" />
           New Battle
         </Button>

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useAuth } from "@/hooks/use-auth";
@@ -14,6 +14,7 @@ import {
   Flame,
   TrendingUp,
   Target,
+  Loader2,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { useTheme } from "@/components/ThemeProvider";
@@ -27,6 +28,67 @@ function getLocalDateStr(): string {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
 }
 
+// Username prompt for users without one
+function UsernamePrompt({ userId, onDone }: { userId: string; onDone: () => void }) {
+  const [input, setInput] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const checkUsername = useQuery(api.username.checkUsername, input.length >= 2 ? { username: input } : "skip");
+  const setUsername = useMutation(api.username.setUsername);
+
+  const handleSubmit = async () => {
+    if (!input.trim() || loading) return;
+    setLoading(true);
+    setError(null);
+    try {
+      await setUsername({ userId, username: input.trim().toLowerCase() });
+      onDone();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to set username");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[100] bg-background/90 backdrop-blur-sm flex items-center justify-center p-4">
+      <div className="clay-card-lg p-6 w-full max-w-sm">
+        <div className="w-14 h-14 rounded-full bg-[var(--primary)]/10 flex items-center justify-center mx-auto mb-4">
+          <Shield className="w-7 h-7 text-[var(--primary)]" />
+        </div>
+        <h2 className="text-xl font-bold text-center text-foreground mb-1">Pick a Username</h2>
+        <p className="text-sm text-muted-foreground text-center mb-5">
+          Choose a unique name. This identifies you in battles and the leaderboard. It cannot be changed later.
+        </p>
+        <input
+          type="text"
+          value={input}
+          onChange={(e) => { setInput(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, "")); setError(null); }}
+          placeholder="e.g. situpking42"
+          maxLength={16}
+          className="w-full h-12 text-center text-lg font-semibold rounded-[var(--clay-radius)] bg-background border border-[var(--border)] px-4 focus:outline-none focus:ring-2 focus:ring-[var(--primary)] mb-2"
+          onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
+        />
+        {/* Live availability check */}
+        {input.length >= 2 && checkUsername && (
+          <p className={`text-xs text-center mb-3 ${checkUsername.valid ? "text-green-500" : "text-red-400"}`}>
+            {checkUsername.valid ? "✓ Available" : checkUsername.error}
+          </p>
+        )}
+        {error && <p className="text-xs text-center text-red-400 mb-3">{error}</p>}
+        <Button
+          onClick={handleSubmit}
+          disabled={loading || !input.trim() || (checkUsername ? !checkUsername.valid : false)}
+          className="clay-btn w-full h-12 text-sm font-semibold"
+        >
+          {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+          {loading ? "Setting..." : "Confirm Username"}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const { user, signOut } = useAuth();
   const { theme, toggleTheme } = useTheme();
@@ -34,6 +96,8 @@ export default function Dashboard() {
   const [tab, setTab] = useState<Tab>(() => {
     return searchParams.get("battle") ? "battles" as Tab : "counter";
   });
+  const [showUsernamePrompt, setShowUsernamePrompt] = useState(false);
+
   const logSession = useMutation(api.situpLogs.logSession);
 
   const dailyCount = useQuery(
@@ -50,7 +114,6 @@ export default function Dashboard() {
   const streak = (() => {
     if (!history || history.length === 0) return 0;
     const sorted = [...history].sort((a, b) => b.date.localeCompare(a.date));
-    // Start from the most recent logged date (could be today or earlier)
     let expected = sorted[0].date;
     let count = 0;
     for (const log of sorted) {
@@ -74,14 +137,40 @@ export default function Dashboard() {
     }
   }, [user, logSession]);
 
+  const handleTabChange = (newTab: Tab) => {
+    if (newTab === "battles") {
+      if (!user) {
+        // Need to be signed in for battles
+        window.location.href = "/auth";
+        return;
+      }
+      if (!user.username) {
+        setShowUsernamePrompt(true);
+        return;
+      }
+    }
+    setTab(newTab);
+  };
+
   const tabs: { id: Tab; icon: typeof Camera; label: string }[] = [
     { id: "counter", icon: Camera, label: "Count" },
     { id: "battles", icon: Swords, label: "Head-to-Head" },
     { id: "leaderboard", icon: Trophy, label: "Leaderboard" },
   ];
 
+  const userId = user?._id ?? "";
+  const username = user?.username ?? "";
+
   return (
     <div className="min-h-screen flex flex-col">
+      {/* Username prompt overlay */}
+      {showUsernamePrompt && user && (
+        <UsernamePrompt
+          userId={user._id}
+          onDone={() => { setShowUsernamePrompt(false); setTab("battles"); }}
+        />
+      )}
+
       {/* Header */}
       <header className="clay-card rounded-t-none border-b border-border px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -90,7 +179,7 @@ export default function Dashboard() {
           </div>
           <div>
             <h1 className="font-semibold text-sm">Situp Challenge</h1>
-            <p className="text-xs text-muted-foreground">{user?.name ?? "Guest"}</p>
+            <p className="text-xs text-muted-foreground">{user?.username ?? user?.name ?? "Guest"}</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -202,7 +291,7 @@ export default function Dashboard() {
           </div>
         )}
 
-        {tab === "battles" && (
+        {tab === "battles" && user && user.username && (
           <div className="p-4">
             <BattleSystem
               onBack={() => {
@@ -210,6 +299,8 @@ export default function Dashboard() {
                 setSearchParams({});
               }}
               initialBattleCode={searchParams.get("battle") ?? undefined}
+              userId={userId}
+              username={username}
             />
           </div>
         )}
@@ -223,7 +314,7 @@ export default function Dashboard() {
           {tabs.map(({ id, icon: Icon, label }) => (
             <button
               key={id}
-              onClick={() => setTab(id)}
+              onClick={() => handleTabChange(id)}
               className={`flex flex-col items-center gap-1 py-3 transition-colors ${
                 tab === id ? "text-primary" : "text-muted-foreground"
               }`}

@@ -28,9 +28,11 @@ const schema = defineSchema(
       email: v.optional(v.string()), // email of the user. do not remove
       emailVerificationTime: v.optional(v.number()), // email verification time. do not remove
       isAnonymous: v.optional(v.boolean()), // is the user anonymous. do not remove
-
       role: v.optional(roleValidator), // role of the user. do not remove
-    }).index("email", ["email"]), // index for the email. do not remove or modify
+      username: v.optional(v.string()),
+    })
+      .index("email", ["email"])
+      .index("by_username", ["username"]),
 
     situpLogs: defineTable({
       userId: v.string(),
@@ -50,11 +52,22 @@ const schema = defineSchema(
       startedAt: v.optional(v.number()),
       endedAt: v.optional(v.number()),
       battleCode: v.string(),
+      matchType: v.string(),
     }).index("by_code", ["battleCode"])
       .index("by_creator", ["creatorId"])
       .index("by_opponent", ["opponentId"]),
 
 
+    matchmaking: defineTable({
+      userId: v.string(),
+      username: v.string(),
+      duration: v.number(),
+      status: v.string(),
+      createdAt: v.number(),
+      battleId: v.optional(v.string()),
+    })
+      .index("by_user", ["userId"])
+      .index("by_status_duration", ["status", "duration"]),
   },
   {
     schemaValidation: false,

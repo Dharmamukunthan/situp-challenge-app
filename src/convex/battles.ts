@@ -24,6 +24,7 @@ export const createBattle = mutation({
       opponentScore: 0,
       status: "waiting",
       battleCode: code,
+      matchType: "private",
     });
     return { id, code };
   },

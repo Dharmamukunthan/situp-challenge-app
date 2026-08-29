@@ -16,7 +16,7 @@ import {
 
 import { useAuth } from "@/hooks/use-auth";
 import logo from "@/assets/logo.svg";
-import { ArrowRight, Loader2, Mail, UserX } from "lucide-react";
+import { ArrowRight, Loader2, Mail, UserX, User } from "lucide-react";
 import { Suspense, useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 
@@ -44,6 +44,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
   );
   const [step, setStep] = useState<"signIn" | { email: string }>("signIn");
   const [otp, setOtp] = useState("");
+  const [usernameInput, setUsernameInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -90,6 +91,20 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
       setIsLoading(false);
 
       setOtp("");
+    }
+  };
+
+  const handleUsernameLogin = async () => {
+    if (!usernameInput.trim()) return;
+    setIsLoading(true);
+    setError(null);
+    try {
+      // Sign in anonymously first, then the user will set their username in the dashboard
+      await signIn("anonymous");
+      navigate(redirect);
+    } catch (error) {
+      setError(`Failed to sign in: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      setIsLoading(false);
     }
   };
 
@@ -183,6 +198,24 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                       type="button"
                       variant="outline"
                       className="w-full mt-4"
+                      onClick={handleUsernameLogin}
+                      disabled={isLoading || !usernameInput.trim()}
+                    >
+                      <User className="mr-2 h-4 w-4" />
+                      Play with Username
+                    </Button>
+                    <input
+                      type="text"
+                      value={usernameInput}
+                      onChange={(e) => setUsernameInput(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ""))}
+                      placeholder="Pick a username"
+                      maxLength={16}
+                      className="w-full h-10 text-center text-sm font-semibold rounded-lg bg-background border border-[var(--border)] px-3 mt-2 focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="w-full mt-3"
                       onClick={handleGuestLogin}
                       disabled={isLoading}
                     >
