@@ -125,11 +125,9 @@ export function BattleSystem({ onBack, initialBattleCode, userId, username }: Ba
     }
   }, [battle, userId]);
 
-  // Clean up stale matchmaking entries on mount
+  // Always clean up old matchmaking entries when entering battle system
   useEffect(() => {
-    if (mode === "random" && phase === "lobby") {
-      cancelMatch({ userId }).catch(() => {});
-    }
+    cancelMatch({ userId }).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

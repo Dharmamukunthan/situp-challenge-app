@@ -19,61 +19,16 @@ export const findMatch = mutation({
     duration: v.number(),
   },
   handler: async (ctx, args) => {
-    // Check if already in queue
-    const existing = await ctx.db
+    // STEP 1: Clean up ALL old matchmaking entries for this user
+    const oldEntries = await ctx.db
       .query("matchmaking")
       .withIndex("by_user", (q) => q.eq("userId", args.userId))
-      .first();
-
-    if (existing && existing.status === "waiting") {
-      // Already waiting — try to match again
-      const opponent = await ctx.db
-        .query("matchmaking")
-        .withIndex("by_status_duration", (q) =>
-          q.eq("status", "waiting").eq("duration", args.duration)
-        )
-        .filter((q) => q.neq(q.field("userId"), args.userId))
-        .order("asc")
-        .first();
-
-      if (opponent) {
-        // Found a match — create battle
-        const code = generateCode();
-        const battleId = await ctx.db.insert("battles", {
-          creatorId: opponent.userId,
-          opponentId: args.userId,
-          duration: args.duration,
-          creatorScore: 0,
-          opponentScore: 0,
-          status: "active",
-          startedAt: Date.now(),
-          battleCode: code,
-          matchType: "random",
-        });
-
-        // Update both matchmaking entries
-        await ctx.db.patch(opponent._id, {
-          status: "matched",
-          battleId: battleId as any,
-        });
-        await ctx.db.patch(existing._id, {
-          status: "matched",
-          battleId: battleId as any,
-        });
-
-        return battleId;
-      }
-
-      // Still waiting
-      return null;
+      .collect();
+    for (const entry of oldEntries) {
+      await ctx.db.delete(entry._id);
     }
 
-    // Remove any old matchmaking entries for this user
-    if (existing) {
-      await ctx.db.delete(existing._id);
-    }
-
-    // Look for a waiting opponent with the same duration
+    // STEP 2: Look for a DIFFERENT waiting player with the same duration
     const opponent = await ctx.db
       .query("matchmaking")
       .withIndex("by_status_duration", (q) =>
@@ -84,7 +39,7 @@ export const findMatch = mutation({
       .first();
 
     if (opponent) {
-      // Found a match — create battle
+      // Found a real opponent — create battle
       const code = generateCode();
       const battleId = await ctx.db.insert("battles", {
         creatorId: opponent.userId,
@@ -98,12 +53,10 @@ export const findMatch = mutation({
         matchType: "random",
       });
 
-      await ctx.db.patch(opponent._id, {
-        status: "matched",
-        battleId: battleId as any,
-      });
+      // Delete opponent's waiting entry
+      await ctx.db.delete(opponent._id);
 
-      // Add this player as matched too
+      // Mark this user as matched
       await ctx.db.insert("matchmaking", {
         userId: args.userId,
         username: args.username,
@@ -116,7 +69,7 @@ export const findMatch = mutation({
       return battleId;
     }
 
-    // No one waiting — add to queue
+    // No opponent found — add to waiting queue
     await ctx.db.insert("matchmaking", {
       userId: args.userId,
       username: args.username,
@@ -150,12 +103,11 @@ export const getMyMatch = query({
 export const cancelMatch = mutation({
   args: { userId: v.string() },
   handler: async (ctx, args) => {
-    const entry = await ctx.db
+    const entries = await ctx.db
       .query("matchmaking")
       .withIndex("by_user", (q) => q.eq("userId", args.userId))
-      .first();
-
-    if (entry && entry.status === "waiting") {
+      .collect();
+    for (const entry of entries) {
       await ctx.db.delete(entry._id);
     }
   },
