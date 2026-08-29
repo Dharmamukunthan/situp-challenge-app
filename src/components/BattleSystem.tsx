@@ -18,12 +18,59 @@ import {
   Globe,
   Lock,
   Search,
-  X,
+  ChevronLeft,
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 
 type BattlePhase = "lobby" | "searching" | "waiting" | "countdown" | "active" | "finished";
-type BattleMode = "random" | "private";
+type BattleMode = "random" | "private" | null;
+
+const DURATIONS = [
+  { value: 30, label: "30s" },
+  { value: 60, label: "1 min" },
+  { value: 300, label: "5 min" },
+];
+
+function DurationPicker({
+  value,
+  onChange,
+  compact = false,
+}: {
+  value: number;
+  onChange: (v: number) => void;
+  compact?: boolean;
+}) {
+  return (
+    <div className={compact ? "mb-3" : "mb-5"}>
+      {!compact && (
+        <label className="text-xs font-medium text-foreground mb-2 block">
+          Select Duration
+        </label>
+      )}
+      <div className="grid grid-cols-3 gap-3">
+        {DURATIONS.map((d) => (
+          <button
+            key={d.value}
+            type="button"
+            onClick={() => onChange(d.value)}
+            className={`
+              h-14 rounded-[var(--clay-radius)] font-bold text-base
+              flex items-center justify-center
+              transition-all select-none
+              ${
+                value === d.value
+                  ? "bg-[var(--primary)] text-[var(--primary-foreground)] shadow-md scale-105"
+                  : "bg-[var(--muted)] text-foreground hover:bg-[var(--accent)]/30 active:scale-95"
+              }
+            `}
+          >
+            {d.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 interface BattleSystemProps {
   onBack: () => void;
@@ -33,7 +80,7 @@ interface BattleSystemProps {
 }
 
 export function BattleSystem({ onBack, initialBattleCode, userId, username }: BattleSystemProps) {
-  const [mode, setMode] = useState<BattleMode | null>(initialBattleCode ? "private" : null);
+  const [mode, setMode] = useState<BattleMode>(initialBattleCode ? "private" : null);
   const [phase, setPhase] = useState<BattlePhase>("lobby");
   const [duration, setDuration] = useState(60);
   const [isCreating, setIsCreating] = useState(false);
@@ -55,7 +102,7 @@ export function BattleSystem({ onBack, initialBattleCode, userId, username }: Ba
     durationRef.current = duration;
   }, [duration]);
 
-  // Convex mutations/queries
+  // Convex
   const createBattle = useMutation(api.battles.createBattle);
   const joinBattle = useMutation(api.battles.joinBattle);
   const updateScore = useMutation(api.battles.updateScore);
@@ -74,11 +121,7 @@ export function BattleSystem({ onBack, initialBattleCode, userId, username }: Ba
   // Camera
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const { repCount, resetCount, error } = usePoseDetection(
-    videoRef,
-    canvasRef,
-    phase === "active"
-  );
+  const { repCount, resetCount, error } = usePoseDetection(videoRef, canvasRef, phase === "active");
 
   // Sync duration from battle doc (for joiners)
   useEffect(() => {
@@ -87,7 +130,7 @@ export function BattleSystem({ onBack, initialBattleCode, userId, username }: Ba
     }
   }, [battle, userId]);
 
-  // Update my score (throttled)
+  // Score updates (throttled)
   const lastScoreUpdateRef = useRef(0);
   useEffect(() => {
     if (phase === "active" && battleId) {
@@ -101,7 +144,7 @@ export function BattleSystem({ onBack, initialBattleCode, userId, username }: Ba
     }
   }, [repCount, phase, battleId, userId, updateScore]);
 
-  // Flush final score on battle end
+  // Flush on end
   useEffect(() => {
     if (phase === "finished" && battleId) {
       updateScore({ battleId: battleId as any, userId, score: myScoreRef.current });
@@ -109,7 +152,7 @@ export function BattleSystem({ onBack, initialBattleCode, userId, username }: Ba
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase]);
 
-  // Sync opponent score
+  // Opponent score
   useEffect(() => {
     if (!battle) return;
     if (battle.creatorId === userId) {
@@ -121,7 +164,7 @@ export function BattleSystem({ onBack, initialBattleCode, userId, username }: Ba
     }
   }, [battle, userId]);
 
-  // Start countdown
+  // Countdown
   const startCountdown = useCallback(() => {
     setPhase("countdown");
     setCountdown(3);
@@ -138,14 +181,14 @@ export function BattleSystem({ onBack, initialBattleCode, userId, username }: Ba
     }, 1000);
   }, []);
 
-  // Watch for opponent joining (private room waiting)
+  // Watch for opponent (private)
   useEffect(() => {
     if (phase === "waiting" && battle?.status === "active") {
       startCountdown();
     }
   }, [battle?.status, phase, startCountdown]);
 
-  // Watch for match found (random matchmaking)
+  // Watch for match (random)
   useEffect(() => {
     if (phase === "searching" && getMyMatch?.battleId) {
       setBattleId(getMyMatch.battleId);
@@ -192,7 +235,7 @@ export function BattleSystem({ onBack, initialBattleCode, userId, username }: Ba
     else setWinner("draw");
   }, [battleId, endBattle]);
 
-  // --- Random Match ---
+  // --- Random ---
   const handleFindMatch = async () => {
     if (isCreating) return;
     setIsCreating(true);
@@ -200,11 +243,9 @@ export function BattleSystem({ onBack, initialBattleCode, userId, username }: Ba
       setPhase("searching");
       const result = await findMatch({ userId, username, duration });
       if (result) {
-        // Immediately matched
         setBattleId(result);
         startCountdown();
       }
-      // Otherwise polling effect will detect the match
     } catch {
       setPhase("lobby");
     } finally {
@@ -217,7 +258,7 @@ export function BattleSystem({ onBack, initialBattleCode, userId, username }: Ba
     setPhase("lobby");
   };
 
-  // --- Private Room ---
+  // --- Private ---
   const handleCreateRoom = async () => {
     if (isCreating) return;
     setIsCreating(true);
@@ -248,14 +289,12 @@ export function BattleSystem({ onBack, initialBattleCode, userId, username }: Ba
     }
   };
 
-  // Auto-join from QR code URL
+  // Auto-join from QR
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (initialBattleCode && phase === "lobby" && mode === "private") {
       setJoinCode(initialBattleCode);
-      const timer = setTimeout(() => {
-        handleJoinWithCode(initialBattleCode);
-      }, 500);
+      const timer = setTimeout(() => handleJoinWithCode(initialBattleCode), 500);
       return () => clearTimeout(timer);
     }
   }, [initialBattleCode]);
@@ -287,14 +326,16 @@ export function BattleSystem({ onBack, initialBattleCode, userId, username }: Ba
     return `${m}:${sec.toString().padStart(2, "0")}`;
   };
 
+  const durationLabel = duration >= 60 ? `${duration / 60} min` : `${duration}s`;
+
   // ========================================
-  // MODE SELECTOR — shown when no mode chosen
+  // MODE SELECTOR
   // ========================================
   if (!mode) {
     return (
       <div className="flex flex-col gap-4 w-full max-w-md mx-auto">
-        <div className="clay-card p-4">
-          <div className="flex items-center gap-3 mb-4">
+        <div className="clay-card p-5">
+          <div className="flex items-center gap-3 mb-5">
             <div className="w-10 h-10 rounded-[var(--clay-radius)] bg-[var(--primary)] flex items-center justify-center">
               <Swords className="w-5 h-5 text-white" />
             </div>
@@ -304,56 +345,39 @@ export function BattleSystem({ onBack, initialBattleCode, userId, username }: Ba
             </div>
           </div>
 
-          {/* Duration picker — always visible before choosing mode */}
-          <div className="mb-4">
-            <label className="text-xs font-medium text-foreground mb-2 block">Duration</label>
-            <div className="grid grid-cols-3 gap-2">
-              {[
-                { value: 30, label: "30s" },
-                { value: 60, label: "1 min" },
-                { value: 300, label: "5 min" },
-              ].map((d) => (
-                <button
-                  key={d.value}
-                  onClick={() => setDuration(d.value)}
-                  className={`clay-card py-3 text-center transition-all ${
-                    duration === d.value
-                      ? "ring-2 ring-[var(--primary)] bg-[var(--primary)]/10"
-                      : "hover:bg-[var(--accent)]/10"
-                  }`}
-                >
-                  <span className="text-sm font-semibold text-foreground">{d.label}</span>
-                </button>
-              ))}
-            </div>
+          {/* BIG duration picker */}
+          <DurationPicker value={duration} onChange={setDuration} />
+
+          {/* Mode buttons */}
+          <div className="flex flex-col gap-3">
+            <button
+              type="button"
+              onClick={() => setMode("random")}
+              className="w-full p-5 rounded-[var(--clay-radius)] bg-[var(--primary)]/10 border-2 border-[var(--primary)]/30 hover:border-[var(--primary)] transition-all text-left flex items-center gap-4 active:scale-[0.98]"
+            >
+              <div className="w-14 h-14 rounded-full bg-[var(--primary)] flex items-center justify-center shrink-0">
+                <Globe className="w-7 h-7 text-white" />
+              </div>
+              <div>
+                <p className="text-lg font-bold text-foreground">Random Match</p>
+                <p className="text-sm text-muted-foreground">Compete against a random online player</p>
+              </div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setMode("private")}
+              className="w-full p-5 rounded-[var(--clay-radius)] bg-[var(--accent)]/10 border-2 border-[var(--accent)]/30 hover:border-[var(--accent)] transition-all text-left flex items-center gap-4 active:scale-[0.98]"
+            >
+              <div className="w-14 h-14 rounded-full bg-[var(--accent)] flex items-center justify-center shrink-0">
+                <Lock className="w-7 h-7 text-[var(--accent-foreground)]" />
+              </div>
+              <div>
+                <p className="text-lg font-bold text-foreground">Private Room</p>
+                <p className="text-sm text-muted-foreground">Create a room and invite friends with a code</p>
+              </div>
+            </button>
           </div>
-
-          {/* Two mode buttons */}
-          <button
-            onClick={() => setMode("random")}
-            className="clay-card w-full p-4 flex items-center gap-3 mb-3 hover:bg-[var(--accent)]/10 transition-all text-left"
-          >
-            <div className="w-12 h-12 rounded-[var(--clay-radius)] bg-[var(--primary)]/10 flex items-center justify-center shrink-0">
-              <Globe className="w-6 h-6 text-[var(--primary)]" />
-            </div>
-            <div>
-              <p className="font-bold text-foreground">Random Match</p>
-              <p className="text-xs text-muted-foreground">Compete against a random online player</p>
-            </div>
-          </button>
-
-          <button
-            onClick={() => setMode("private")}
-            className="clay-card w-full p-4 flex items-center gap-3 hover:bg-[var(--accent)]/10 transition-all text-left"
-          >
-            <div className="w-12 h-12 rounded-[var(--clay-radius)] bg-[var(--accent)]/20 flex items-center justify-center shrink-0">
-              <Lock className="w-6 h-6 text-[var(--accent-foreground)]" />
-            </div>
-            <div>
-              <p className="font-bold text-foreground">Private Room</p>
-              <p className="text-xs text-muted-foreground">Create a room and invite friends with a code</p>
-            </div>
-          </button>
         </div>
 
         <Button onClick={onBack} variant="ghost" className="w-full h-10 text-sm">
@@ -364,20 +388,22 @@ export function BattleSystem({ onBack, initialBattleCode, userId, username }: Ba
   }
 
   // ========================================
-  // RANDOM MATCH — searching
+  // RANDOM — Searching
   // ========================================
   if (mode === "random" && phase === "searching") {
     return (
-      <div className="flex flex-col gap-6 w-full max-w-md mx-auto items-center">
+      <div className="flex flex-col gap-4 w-full max-w-md mx-auto">
+        {/* Duration always visible */}
+        <DurationPicker value={duration} onChange={setDuration} compact />
+
         <div className="clay-card-lg p-8 text-center w-full">
           <div className="w-16 h-16 rounded-[var(--clay-radius)] bg-[var(--primary)]/10 flex items-center justify-center mx-auto mb-4">
             <Search className="w-8 h-8 text-[var(--primary)] animate-pulse" />
           </div>
           <h2 className="text-2xl font-bold text-foreground mb-2">Finding opponent</h2>
           <p className="text-muted-foreground mb-4">
-            Searching for a player with {duration >= 60 ? `${duration / 60} min` : `${duration}s`} duration...
+            Searching for a {durationLabel} match...
           </p>
-
           <div className="flex justify-center gap-1 mb-6">
             {[0, 1, 2].map((i) => (
               <div
@@ -387,8 +413,7 @@ export function BattleSystem({ onBack, initialBattleCode, userId, username }: Ba
               />
             ))}
           </div>
-
-          <p className="text-xs text-muted-foreground mb-4">
+          <p className="text-xs text-muted-foreground">
             You: <span className="font-semibold text-foreground">{username}</span>
           </p>
         </div>
@@ -401,13 +426,13 @@ export function BattleSystem({ onBack, initialBattleCode, userId, username }: Ba
   }
 
   // ========================================
-  // PRIVATE ROOM — lobby (create / join)
+  // PRIVATE — Lobby (create / join)
   // ========================================
   if (mode === "private" && phase === "lobby") {
     return (
       <div className="flex flex-col gap-4 w-full max-w-md mx-auto">
-        <div className="clay-card p-4">
-          <div className="flex items-center gap-3 mb-4">
+        <div className="clay-card p-5">
+          <div className="flex items-center gap-3 mb-5">
             <div className="w-10 h-10 rounded-[var(--clay-radius)] bg-[var(--accent)]/20 flex items-center justify-center">
               <Lock className="w-5 h-5 text-[var(--accent-foreground)]" />
             </div>
@@ -417,38 +442,15 @@ export function BattleSystem({ onBack, initialBattleCode, userId, username }: Ba
             </div>
           </div>
 
-          {/* Duration picker */}
-          <div className="mb-4">
-            <label className="text-xs font-medium text-foreground mb-2 block">Duration</label>
-            <div className="grid grid-cols-3 gap-2">
-              {[
-                { value: 30, label: "30s" },
-                { value: 60, label: "1 min" },
-                { value: 300, label: "5 min" },
-              ].map((d) => (
-                <button
-                  key={d.value}
-                  onClick={() => setDuration(d.value)}
-                  className={`clay-card py-3 text-center transition-all ${
-                    duration === d.value
-                      ? "ring-2 ring-[var(--primary)] bg-[var(--primary)]/10"
-                      : "hover:bg-[var(--accent)]/10"
-                  }`}
-                >
-                  <span className="text-sm font-semibold text-foreground">{d.label}</span>
-                </button>
-              ))}
-            </div>
-          </div>
+          {/* Duration always visible */}
+          <DurationPicker value={duration} onChange={setDuration} />
 
-          {/* Create room */}
-          <Button onClick={handleCreateRoom} disabled={isCreating} className="clay-btn w-full h-11 text-sm font-semibold mb-4">
+          <Button onClick={handleCreateRoom} disabled={isCreating} className="clay-btn w-full h-12 text-sm font-semibold mb-4">
             {isCreating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Swords className="w-4 h-4 mr-2" />}
             {isCreating ? "Creating..." : "Create Room"}
           </Button>
 
-          {/* Join with code */}
-          <div className="clay-inset p-3">
+          <div className="clay-inset p-4">
             <label className="text-xs font-medium text-foreground mb-2 block">Join with Code</label>
             <div className="flex gap-2">
               <input
@@ -457,9 +459,9 @@ export function BattleSystem({ onBack, initialBattleCode, userId, username }: Ba
                 onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
                 placeholder="CODE"
                 maxLength={6}
-                className="flex-1 h-11 text-center text-base font-mono font-bold tracking-[0.3em] rounded-[var(--clay-radius)] bg-background border border-[var(--border)] px-3 focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
+                className="flex-1 h-12 text-center text-base font-mono font-bold tracking-[0.3em] rounded-[var(--clay-radius)] bg-background border border-[var(--border)] px-3 focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
               />
-              <Button onClick={() => handleJoinWithCode(joinCode)} disabled={isJoining || !joinCode.trim()} className="clay-btn h-11 px-5 text-sm">
+              <Button onClick={() => handleJoinWithCode(joinCode)} disabled={isJoining || !joinCode.trim()} className="clay-btn h-12 px-5 text-sm">
                 {isJoining ? <Loader2 className="w-4 h-4 animate-spin" /> : "Join"}
               </Button>
             </div>
@@ -474,11 +476,14 @@ export function BattleSystem({ onBack, initialBattleCode, userId, username }: Ba
   }
 
   // ========================================
-  // PRIVATE ROOM — waiting for friend to join
+  // PRIVATE — Waiting
   // ========================================
   if (phase === "waiting") {
     return (
-      <div className="flex flex-col gap-6 w-full max-w-md mx-auto items-center">
+      <div className="flex flex-col gap-4 w-full max-w-md mx-auto">
+        {/* Duration always visible */}
+        <DurationPicker value={duration} onChange={setDuration} compact />
+
         <div className="clay-card-lg p-8 text-center w-full">
           <div className="w-16 h-16 rounded-[var(--clay-radius)] bg-[var(--primary)]/10 flex items-center justify-center mx-auto mb-4">
             <Users className="w-8 h-8 text-[var(--primary)]" />
@@ -486,13 +491,11 @@ export function BattleSystem({ onBack, initialBattleCode, userId, username }: Ba
           <h2 className="text-2xl font-bold text-foreground mb-2">Waiting for opponent</h2>
           <p className="text-muted-foreground mb-6">Share the code or scan the QR to join.</p>
 
-          {/* Battle code */}
           <div className="clay-inset p-4 mb-4">
             <p className="text-xs text-muted-foreground mb-1">Room Code</p>
             <p className="text-4xl font-mono font-bold tracking-[0.3em] text-foreground">{battleCode}</p>
           </div>
 
-          {/* Copy */}
           <div className="flex gap-2 mb-6">
             <Button onClick={copyCode} className="clay-btn flex-1 h-12">
               {copied ? <Check className="w-5 h-5 mr-2" /> : <Copy className="w-5 h-5 mr-2" />}
@@ -500,7 +503,6 @@ export function BattleSystem({ onBack, initialBattleCode, userId, username }: Ba
             </Button>
           </div>
 
-          {/* QR Code */}
           <div className="clay-card p-6 inline-block">
             <QRCodeSVG value={getBattleUrl()} size={180} bgColor="transparent" fgColor="var(--foreground)" />
           </div>
@@ -525,7 +527,7 @@ export function BattleSystem({ onBack, initialBattleCode, userId, username }: Ba
   }
 
   // ========================================
-  // COUNTDOWN (shared by both modes)
+  // COUNTDOWN
   // ========================================
   if (phase === "countdown") {
     return (
@@ -534,12 +536,13 @@ export function BattleSystem({ onBack, initialBattleCode, userId, username }: Ba
           {countdown}
         </div>
         <p className="text-xl text-muted-foreground mt-6 font-medium">Stand by</p>
+        <p className="text-sm text-muted-foreground mt-2">{durationLabel} battle</p>
       </div>
     );
   }
 
   // ========================================
-  // ACTIVE BATTLE (shared)
+  // ACTIVE
   // ========================================
   if (phase === "active") {
     return (
@@ -593,10 +596,7 @@ export function BattleSystem({ onBack, initialBattleCode, userId, username }: Ba
               <div className="text-center">
                 <p className="text-sm font-medium text-foreground mb-1">Camera unavailable in preview</p>
                 <p className="text-xs text-muted-foreground mb-2">Open in a full tab to use the camera.</p>
-                <Button
-                  onClick={() => window.open(window.location.href, "_blank")}
-                  className="clay-btn h-8 px-4 text-xs"
-                >
+                <Button onClick={() => window.open(window.location.href, "_blank")} className="clay-btn h-8 px-4 text-xs">
                   <ExternalLink className="w-3 h-3 mr-1" />
                   Open in New Tab
                 </Button>
@@ -611,7 +611,7 @@ export function BattleSystem({ onBack, initialBattleCode, userId, username }: Ba
   }
 
   // ========================================
-  // FINISHED (shared)
+  // FINISHED
   // ========================================
   return (
     <div className="flex flex-col gap-6 w-full max-w-md mx-auto items-center">
