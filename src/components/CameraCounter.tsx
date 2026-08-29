@@ -82,7 +82,11 @@ export function CameraCounter({ onSessionEnd, dailyGoal = 100 }: CameraCounterPr
               {cameraOn && (
                 <div className="clay-inset bg-background/70 backdrop-blur-sm px-4 py-3 text-center">
                   <p className="text-sm text-muted-foreground">
-                    {isInUpPhase ? "Hold at the top" : "Lower back down"}
+                    {isInUpPhase
+                      ? "Sitting up — now lie back down"
+                      : currentAngle > 60
+                        ? "Lying down — sit up now!"
+                        : "Keep going — full range of motion"}
                   </p>
                 </div>
               )}
@@ -133,18 +137,26 @@ export function CameraCounter({ onSessionEnd, dailyGoal = 100 }: CameraCounterPr
         <div className="w-full max-w-md clay-card p-4">
           <div className="flex items-center justify-between mb-2">
             <span className="text-sm font-medium text-foreground">Torso Angle</span>
-            <span className="text-sm text-muted-foreground">{currentAngle}°</span>
+            <span className="text-sm text-muted-foreground">
+              {currentAngle}° — {currentAngle < 35 ? "Sitting up" : currentAngle > 60 ? "Lying down" : "Moving"}
+            </span>
           </div>
           <div className="w-full h-3 clay-inset overflow-hidden">
             <div
               className="h-full rounded-[var(--clay-radius)] transition-all duration-100"
               style={{
-                width: `${Math.min(currentAngle, 180) / 1.8}%`,
-                background: isInUpPhase
+                width: `${Math.min(currentAngle, 90) / 0.9}%`,
+                background: currentAngle < 35
                   ? "linear-gradient(135deg, #b5e8d5, #5ecfb5)"
-                  : "linear-gradient(135deg, #f8c8dc, #f4845f)",
+                  : currentAngle > 60
+                    ? "linear-gradient(135deg, #f8c8dc, #f4845f)"
+                    : "linear-gradient(135deg, #fbbf24, #f59e0b)",
               }}
             />
+          </div>
+          <div className="flex justify-between mt-1">
+            <span className="text-[10px] text-green-500">← Sitting up ({'<'}35°)</span>
+            <span className="text-[10px] text-red-400">Lying down ({'>'}60°) →</span>
           </div>
         </div>
       )}
