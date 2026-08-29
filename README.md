@@ -1,3 +1,17 @@
+## App Showcase
+
+<table width="100%">
+  <tr>
+    <td align="center" width="50%"><b>Count Screen</b><br><br><img src="screenshots/Count.jpg" width="100%" style="max-width:240px; border-radius:8px;"></td>
+    <td align="center" width="50%"><b>Count Alternative</b><br><br><img src="screenshots/Count(1).jpg" width="100%" style="max-width:240px; border-radius:8px;"></td>
+  </tr>
+  <tr>
+    <td align="center" width="50%"><br><b>Head to Head Challenge</b><br><br><img src="screenshots/Head-to-Head.jpg" width="100%" style="max-width:240px; border-radius:8px;"></td>
+    <td align="center" width="50%"><br><b>Leaderboard Rankings</b><br><br><img src="screenshots/Leaderboard.jpg" width="100%" style="max-width:240px; border-radius:8px;"></td>
+  </tr>
+</table>
+
+<br>
 ## Overview
 
 This project uses the following tech stack:
