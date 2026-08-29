@@ -78,12 +78,13 @@ export function BattleSystem({ onBack, initialBattleCode }: BattleSystemProps) {
     phase === "active"
   );
 
-  // Sync duration from the battle document when joining (opponent uses creator's duration)
+  // Sync duration from the battle document whenever it loads and we're not the creator.
+  // This must fire for both the creator (waiting phase) and the joiner (countdown phase).
   useEffect(() => {
-    if (battle && phase === "waiting" && battle.creatorId !== userId) {
+    if (battle && battle.creatorId !== userId) {
       setDuration(battle.duration);
     }
-  }, [battle, phase, userId]);
+  }, [battle, userId]);
 
   // Update my score when repCount changes (throttled to max once per second)
   const lastScoreUpdateRef = useRef(0);
