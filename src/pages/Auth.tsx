@@ -109,17 +109,6 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
       // useAuth will have updated user after signIn completes
       // We use localStorage as fallback until we can read the userId
       localStorage.setItem("situp-pending-username", name);
-      // Try to save to Convex now — user._id should be available
-      // We need a small delay for the auth state to propagate
-      setTimeout(async () => {
-        try {
-          // Re-read user from useAuth — but we can't access it here directly
-          // Instead, we'll save it in the Dashboard useEffect
-          // For now, just navigate
-        } catch (e) {
-          console.error("Failed to save username immediately:", e);
-        }
-      }, 100);
       navigate(redirect);
     } catch (error) {
       localStorage.removeItem("situp-pending-username");

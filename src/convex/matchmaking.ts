@@ -53,10 +53,13 @@ export const findMatch = mutation({
         matchType: "random",
       });
 
-      // Delete opponent's waiting entry
-      await ctx.db.delete(opponent._id);
+      // Update OPPONENT's entry to 'matched' so their getMyMatch query returns the battleId
+      await ctx.db.patch(opponent._id, {
+        status: "matched",
+        battleId: battleId as any,
+      });
 
-      // Mark this user as matched
+      // Mark this user as matched too
       await ctx.db.insert("matchmaking", {
         userId: args.userId,
         username: args.username,

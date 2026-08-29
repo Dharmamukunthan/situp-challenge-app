@@ -72,13 +72,6 @@ export default function Landing() {
                 Get Started
                 <ChevronRight className="w-5 h-5 ml-2" />
               </Button>
-              <Button
-                onClick={() => navigate("/auth")}
-                className="clay-btn h-14 px-8 text-lg font-semibold"
-                style={{ background: "var(--secondary)", color: "var(--secondary-foreground)" }}
-              >
-                Continue as Guest
-              </Button>
             </div>
           </motion.div>
 

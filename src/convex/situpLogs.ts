@@ -93,7 +93,9 @@ export const getLeaderboard = query({
       let userName = "Athlete";
       try {
         const userDoc = await ctx.db.get(entry.userId as any);
-        if (userDoc && "name" in userDoc) userName = (userDoc as any).name || "Athlete";
+        if (userDoc) {
+          userName = (userDoc as any).username || (userDoc as any).name || "Athlete";
+        }
       } catch {
         // ignore
       }

@@ -104,10 +104,6 @@ export default function Dashboard() {
     setTab(newTab);
   };
 
-  // Debug: log username state
-  // eslint-disable-next-line
-  console.log("[Dashboard] user:", user?.username, user?.name, user?._id);
-
   const tabs: { id: Tab; icon: typeof Camera; label: string }[] = [
     { id: "counter", icon: Camera, label: "Count" },
     { id: "battles", icon: Swords, label: "Head-to-Head" },
