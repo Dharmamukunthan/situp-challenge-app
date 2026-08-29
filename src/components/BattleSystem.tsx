@@ -118,17 +118,27 @@ export function BattleSystem({ onBack, initialBattleCode, userId, username }: Ba
     battleId ? { battleId: battleId as any } : "skip"
   );
 
-  // Camera
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const { repCount, resetCount, error } = usePoseDetection(videoRef, canvasRef, phase === "active");
-
-  // Sync duration from battle doc (for joiners)
+  // Sync duration from battle as soon as it loads (for joiners and random match)
   useEffect(() => {
     if (battle && battle.creatorId !== userId) {
       setDuration(battle.duration);
     }
   }, [battle, userId]);
+
+  // Clean up stale matchmaking entries on mount
+  useEffect(() => {
+    if (mode === "random" && phase === "lobby") {
+      cancelMatch({ userId }).catch(() => {});
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Camera
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const { repCount, resetCount, error } = usePoseDetection(videoRef, canvasRef, phase === "active");
+
+
 
   // Score updates (throttled)
   const lastScoreUpdateRef = useRef(0);
@@ -188,25 +198,18 @@ export function BattleSystem({ onBack, initialBattleCode, userId, username }: Ba
     }
   }, [battle?.status, phase, startCountdown]);
 
-  // Watch for match (random)
+  // Watch for match found via polling (random)
   useEffect(() => {
     if (phase === "searching" && getMyMatch?.battleId) {
       setBattleId(getMyMatch.battleId);
-      setPhase("countdown");
-      setCountdown(3);
-      const timer = setInterval(() => {
-        setCountdown((c) => {
-          if (c <= 1) {
-            clearInterval(timer);
-            setPhase("active");
-            setTimeLeft(durationRef.current);
-            return 0;
-          }
-          return c - 1;
-        });
-      }, 1000);
+      // Start countdown after battleId is set so the battle query activates
+      // on the next render. We delay slightly to let the query subscribe.
+      const timer = setTimeout(() => {
+        startCountdown();
+      }, 300);
+      return () => clearTimeout(timer);
     }
-  }, [getMyMatch, phase]);
+  }, [getMyMatch, phase, startCountdown]);
 
   // Battle timer
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -244,7 +247,8 @@ export function BattleSystem({ onBack, initialBattleCode, userId, username }: Ba
       const result = await findMatch({ userId, username, duration });
       if (result) {
         setBattleId(result);
-        startCountdown();
+        // Delay countdown so the battle query activates first
+        setTimeout(() => startCountdown(), 300);
       }
     } catch {
       setPhase("lobby");
