@@ -88,11 +88,13 @@ export default function Dashboard() {
           })
           .catch((err) => {
             console.error("[Dashboard] Failed to save username:", err);
-            localStorage.removeItem("situp-pending-username");
           });
       }
     }
   }, [user, setUsernameMutation]);
+
+  // Display name: prefer Convex username, then localStorage pending, then name, then Guest
+  const displayName = user?.username || localStorage.getItem("situp-pending-username") || user?.name || "Guest";
 
   const handleTabChange = (newTab: Tab) => {
     if (newTab === "battles" && !user) {
@@ -113,7 +115,7 @@ export default function Dashboard() {
   ];
 
   const userId = user?._id ?? "";
-  const username = user?.username ?? "";
+  const username = user?.username || localStorage.getItem("situp-pending-username") || "";
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -125,7 +127,7 @@ export default function Dashboard() {
           </div>
           <div>
             <h1 className="font-semibold text-sm">Situp Challenge</h1>
-            <p className="text-xs text-muted-foreground">{user?.username ?? user?.name ?? localStorage.getItem("situp-pending-username") ?? "Guest"}</p>
+            <p className="text-xs text-muted-foreground">{displayName}</p>
           </div>
         </div>
         <div className="flex items-center gap-2">

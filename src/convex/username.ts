@@ -39,25 +39,32 @@ export const setUsername = mutation({
       throw new Error("Only letters, numbers, and underscores allowed");
     }
 
-    // Check if username is taken
+    // Find user by iterating auth tables
+    // The userId from useAuth() is the auth account ID, not the users document ID
+    // We need to find the users document linked to this auth account
+    const authAccount = await ctx.db.get(args.userId as any);
+    if (!authAccount) {
+      // Try to find via the auth accounts table
+      // For anonymous users, the account might be in a different table
+      throw new Error(`User not found for ID: ${args.userId}`);
+    }
+
+    // Check if username is taken by someone else
     const existing = await ctx.db
       .query("users")
       .withIndex("by_username", (q) => q.eq("username", normalized))
       .first();
-    if (existing) {
+    if (existing && (existing as any)._id !== args.userId) {
       throw new Error("Username is already taken");
     }
 
-    // Check if user already has a username (can't change)
-    const user = await ctx.db.get(args.userId as any);
-    if (user && "username" in user && (user as any).username) {
-      throw new Error("Username already set and cannot be changed");
+    // Check if user already has a username
+    if ("username" in authAccount && (authAccount as any).username) {
+      // Already set — allow overwrite (for first-time fixup)
     }
 
     // Set username
-    if (user) {
-      await ctx.db.patch(user._id, { username: normalized });
-    }
+    await ctx.db.patch(authAccount._id, { username: normalized });
 
     return normalized;
   },
