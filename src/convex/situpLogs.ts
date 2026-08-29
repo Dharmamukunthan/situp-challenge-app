@@ -105,3 +105,45 @@ export const getLeaderboard = query({
     return results.sort((a, b) => b.total - a.total);
   },
 });
+
+export const getOverallLeaderboard = query({
+  args: {},
+  handler: async (ctx) => {
+    const allLogs = await ctx.db.query("situpLogs").collect();
+
+    const byUser: Record<string, { userId: string; total: number; days: number }> = {};
+    for (const log of allLogs) {
+      if (!byUser[log.userId]) {
+        byUser[log.userId] = { userId: log.userId, total: 0, days: 0 };
+      }
+      byUser[log.userId].total += log.sessionReps;
+    }
+
+    // Count unique days per user
+    const daysByUser: Record<string, Set<string>> = {};
+    for (const log of allLogs) {
+      if (!daysByUser[log.userId]) daysByUser[log.userId] = new Set();
+      daysByUser[log.userId].add(log.date);
+    }
+    for (const userId of Object.keys(byUser)) {
+      byUser[userId].days = daysByUser[userId]?.size ?? 0;
+    }
+
+    const entries = Object.values(byUser);
+    const results: { userId: string; userName: string; total: number; days: number }[] = [];
+    for (const entry of entries.slice(0, 50)) {
+      let userName = "Athlete";
+      try {
+        const userDoc = await ctx.db.get(entry.userId as any);
+        if (userDoc) {
+          userName = (userDoc as any).username || (userDoc as any).name || "Athlete";
+        }
+      } catch {
+        // ignore
+      }
+      results.push({ userId: entry.userId, userName, total: entry.total, days: entry.days });
+    }
+
+    return results.sort((a, b) => b.total - a.total);
+  },
+});

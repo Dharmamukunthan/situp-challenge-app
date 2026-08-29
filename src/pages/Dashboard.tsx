@@ -266,11 +266,36 @@ export default function Dashboard() {
 }
 
 function LeaderboardSection() {
-  const rankings = useQuery(api.situpLogs.getLeaderboard);
+  const [view, setView] = useState<"today" | "alltime">("today");
+  const todayRankings = useQuery(api.situpLogs.getLeaderboard);
+  const overallRankings = useQuery(api.situpLogs.getOverallLeaderboard);
+  const rankings = view === "today" ? todayRankings : overallRankings;
 
   return (
     <div className="p-4">
-      <h2 className="text-lg font-bold mb-4">Today's Rankings</h2>
+      <div className="flex gap-2 mb-4">
+        <button
+          onClick={() => setView("today")}
+          className={`clay-pill px-4 py-2 text-xs font-medium transition-colors ${
+            view === "today"
+              ? "bg-primary text-primary-foreground"
+              : "bg-muted text-muted-foreground"
+          }`}
+        >
+          Today
+        </button>
+        <button
+          onClick={() => setView("alltime")}
+          className={`clay-pill px-4 py-2 text-xs font-medium transition-colors ${
+            view === "alltime"
+              ? "bg-primary text-primary-foreground"
+              : "bg-muted text-muted-foreground"
+          }`}
+        >
+          All Time
+        </button>
+      </div>
+
       {!rankings ? (
         <div className="clay-card p-8 text-center">
           <Trophy className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
@@ -280,7 +305,7 @@ function LeaderboardSection() {
         <div className="clay-card p-8 text-center">
           <Trophy className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
           <p className="text-sm text-muted-foreground">
-            No sessions logged today. Be the first!
+            {view === "today" ? "No sessions logged today. Be the first!" : "No sessions logged yet. Be the first!"}
           </p>
         </div>
       ) : (
@@ -308,6 +333,9 @@ function LeaderboardSection() {
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium truncate">{entry.userName}</p>
+                {"days" in entry && view === "alltime" && (
+                  <p className="text-[10px] text-muted-foreground">{(entry as any).days} active days</p>
+                )}
               </div>
               <span className="text-sm font-bold text-primary">
                 {entry.total}
