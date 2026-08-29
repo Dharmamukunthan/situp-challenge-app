@@ -14,7 +14,6 @@ import {
   Flame,
   TrendingUp,
   Target,
-  Loader2,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { useTheme } from "@/components/ThemeProvider";
@@ -22,13 +21,6 @@ import { CameraCounter } from "@/components/CameraCounter";
 import { BattleSystem } from "@/components/BattleSystem";
 
 type Tab = "counter" | "battles" | "leaderboard";
-
-function getLocalDateStr(): string {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-}
-
-
 
 export default function Dashboard() {
   const { user, signOut } = useAuth();
