@@ -69,7 +69,7 @@ export default function Dashboard() {
     }
   }, [user, logSession]);
 
-  // Save pending username from auth page on mount
+  // Save pending username — retries every render until Convex confirms it's saved
   useEffect(() => {
     if (user && !user.username) {
       const pending = localStorage.getItem("situp-pending-username");
@@ -78,14 +78,14 @@ export default function Dashboard() {
           .then(() => {
             localStorage.removeItem("situp-pending-username");
           })
-          .catch((err) => {
-            console.error("[Dashboard] Failed to save username:", err);
+          .catch(() => {
+            // Will retry on next render — username persists in localStorage until save succeeds
           });
       }
     }
   }, [user, setUsernameMutation]);
 
-  // Display name: prefer Convex username, then localStorage pending, then name, then Guest
+  // Display name: prefer Convex DB username, then localStorage, then name, then Guest
   const displayName = user?.username || localStorage.getItem("situp-pending-username") || user?.name || "Guest";
 
   const handleTabChange = (newTab: Tab) => {

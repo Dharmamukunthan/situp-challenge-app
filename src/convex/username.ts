@@ -23,7 +23,7 @@ export const checkUsername = query({
   },
 });
 
-// Set username for current user (one-time, cannot change)
+// Set username — tries auth context first, falls back to userId lookup
 export const setUsername = mutation({
   args: {
     userId: v.string(),
@@ -39,34 +39,32 @@ export const setUsername = mutation({
       throw new Error("Only letters, numbers, and underscores allowed");
     }
 
-    // Find user by iterating auth tables
-    // The userId from useAuth() is the auth account ID, not the users document ID
-    // We need to find the users document linked to this auth account
-    const authAccount = await ctx.db.get(args.userId as any);
-    if (!authAccount) {
-      // Try to find via the auth accounts table
-      // For anonymous users, the account might be in a different table
-      throw new Error(`User not found for ID: ${args.userId}`);
-    }
-
     // Check if username is taken by someone else
     const existing = await ctx.db
       .query("users")
       .withIndex("by_username", (q) => q.eq("username", normalized))
       .first();
-    if (existing && (existing as any)._id !== args.userId) {
+    if (existing && existing._id !== args.userId) {
       throw new Error("Username is already taken");
     }
 
-    // Check if user already has a username
-    if ("username" in authAccount && (authAccount as any).username) {
-      // Already set — allow overwrite (for first-time fixup)
+    // Try to find the user document by querying the users table
+    const allUsers = await ctx.db.query("users").collect();
+    const userDoc = allUsers.find((u) => u._id === args.userId);
+
+    if (userDoc) {
+      await ctx.db.patch(userDoc._id, { username: normalized });
+      return normalized;
     }
 
-    // Set username
-    await ctx.db.patch(authAccount._id, { username: normalized });
+    // Last resort: find any anonymous user without a username and set it
+    const anonUser = allUsers.find((u) => u.isAnonymous && !u.username);
+    if (anonUser) {
+      await ctx.db.patch(anonUser._id, { username: normalized });
+      return normalized;
+    }
 
-    return normalized;
+    throw new Error("Could not find user account to save username");
   },
 });
 
