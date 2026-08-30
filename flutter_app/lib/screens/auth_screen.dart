@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'dart:convert';
-import 'package:http/http.dart' as http;
 
 class AuthScreen extends StatefulWidget {
   final Function(String username) onAuth;
@@ -33,21 +31,11 @@ class _AuthScreenState extends State<AuthScreen> {
     setState(() { _isLoading = true; _error = null; });
 
     try {
-      final response = await http.post(
-        Uri.parse('https://graceful-mink-900.convex.site/api/mutation/users.signInWithUsername'),
-        headers: {'Content-Type': 'application/json'},
-        body: json.encode({'args': {'username': username}}),
-      );
-
-      if (response.statusCode == 200) {
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('situp-username', username);
-        widget.onAuth(username);
-      } else {
-        setState(() { _error = "Failed to sign in"; _isLoading = false; });
-      }
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('situp-username', username);
+      widget.onAuth(username);
     } catch (_) {
-      setState(() { _error = "Network error"; _isLoading = false; });
+      setState(() { _error = "Failed to save username"; _isLoading = false; });
     }
   }
 
@@ -75,7 +63,6 @@ class _AuthScreenState extends State<AuthScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Logo
                 Container(
                   padding: const EdgeInsets.all(18),
                   decoration: BoxDecoration(
@@ -97,7 +84,6 @@ class _AuthScreenState extends State<AuthScreen> {
 
                 const SizedBox(height: 32),
 
-                // Username input
                 TextField(
                   controller: _controller,
                   decoration: InputDecoration(
@@ -122,7 +108,6 @@ class _AuthScreenState extends State<AuthScreen> {
 
                 const SizedBox(height: 24),
 
-                // Sign in button
                 SizedBox(
                   width: double.infinity, height: 56,
                   child: ElevatedButton(

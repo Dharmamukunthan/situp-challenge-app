@@ -20,6 +20,9 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
   static const Color _textColor = Color(0xFF3D2C2C);
   static const Color _subtextColor = Color(0xFF9C8A8A);
 
+  // Convex HTTP API endpoint
+  static const String _convexUrl = 'https://graceful-mink-900.convex.site';
+
   @override
   void initState() {
     super.initState();
@@ -29,13 +32,19 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
   Future<void> _loadRankings() async {
     setState(() => _isLoading = true);
     try {
-      final response = await http.get(
-        Uri.parse('https://graceful-mink-900.convex.site/api/query/situpLogs.getLeaderboard?isToday=$_isToday'),
+      final response = await http.post(
+        Uri.parse('$_convexUrl/api/query'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({
+          'path': 'situpLogs:getLeaderboard',
+          'args': {'isToday': _isToday},
+        }),
       );
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
+        final result = data['result'];
         setState(() {
-          _rankings = List<Map<String, dynamic>>.from(data['result'] ?? []);
+          _rankings = result is List ? List<Map<String, dynamic>>.from(result) : [];
           _isLoading = false;
         });
       } else {
@@ -59,11 +68,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
               color: _cardColor,
               borderRadius: BorderRadius.circular(20),
               boxShadow: [
-                BoxShadow(
-                  color: _accentColor.withAlpha(15),
-                  blurRadius: 15,
-                  offset: const Offset(0, 6),
-                ),
+                BoxShadow(color: _accentColor.withAlpha(15), blurRadius: 15, offset: const Offset(0, 6)),
               ],
             ),
             child: Row(
@@ -79,11 +84,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                       ),
                       child: Center(
                         child: Text("Today",
-                            style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.bold,
-                              color: _isToday ? Colors.white : _subtextColor,
-                            )),
+                            style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: _isToday ? Colors.white : _subtextColor)),
                       ),
                     ),
                   ),
@@ -99,11 +100,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                       ),
                       child: Center(
                         child: Text("All Time",
-                            style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.bold,
-                              color: !_isToday ? Colors.white : _subtextColor,
-                            )),
+                            style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: !_isToday ? Colors.white : _subtextColor)),
                       ),
                     ),
                   ),
@@ -119,11 +116,8 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
 
           const SizedBox(height: 16),
 
-          // Rankings
           if (_isLoading)
-            Center(
-              child: CircularProgressIndicator(color: _accentColor),
-            )
+            Center(child: CircularProgressIndicator(color: _accentColor))
           else if (_rankings.isEmpty)
             Container(
               width: double.infinity,
@@ -131,23 +125,15 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
               decoration: BoxDecoration(
                 color: _cardColor,
                 borderRadius: BorderRadius.circular(24),
-                boxShadow: [
-                  BoxShadow(
-                    color: _accentColor.withAlpha(15),
-                    blurRadius: 20,
-                    offset: const Offset(0, 8),
-                  ),
-                ],
+                boxShadow: [BoxShadow(color: _accentColor.withAlpha(15), blurRadius: 20, offset: const Offset(0, 8))],
               ),
               child: Column(
                 children: [
                   Icon(Icons.emoji_events, size: 48, color: _subtextColor),
                   const SizedBox(height: 16),
-                  Text("No sessions logged today.",
-                      style: TextStyle(fontSize: 16, color: _textColor, fontWeight: FontWeight.w600)),
+                  Text("No sessions logged today.", style: TextStyle(fontSize: 16, color: _textColor, fontWeight: FontWeight.w600)),
                   const SizedBox(height: 4),
-                  Text("Be the first!",
-                      style: TextStyle(fontSize: 14, color: _subtextColor)),
+                  Text("Be the first!", style: TextStyle(fontSize: 14, color: _subtextColor)),
                 ],
               ),
             )
@@ -161,24 +147,12 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                 decoration: BoxDecoration(
                   color: _cardColor,
                   borderRadius: BorderRadius.circular(20),
-                  boxShadow: [
-                    BoxShadow(
-                      color: _accentColor.withAlpha(15),
-                      blurRadius: 15,
-                      offset: const Offset(0, 6),
-                    ),
-                  ],
+                  boxShadow: [BoxShadow(color: _accentColor.withAlpha(15), blurRadius: 15, offset: const Offset(0, 6))],
                 ),
                 child: Row(
                   children: [
-                    Text(
-                      index < 3 ? medals[index] : "${index + 1}",
-                      style: TextStyle(
-                        fontSize: index < 3 ? 24 : 16,
-                        fontWeight: FontWeight.bold,
-                        color: _textColor,
-                      ),
-                    ),
+                    Text(index < 3 ? medals[index] : "${index + 1}",
+                        style: TextStyle(fontSize: index < 3 ? 24 : 16, fontWeight: FontWeight.bold, color: _textColor)),
                     const SizedBox(width: 16),
                     Expanded(
                       child: Column(

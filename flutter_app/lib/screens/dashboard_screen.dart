@@ -50,9 +50,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     try {
       final response = await http.post(
-        Uri.parse('https://graceful-mink-900.convex.site/api/mutation/battles.createBattle'),
+        Uri.parse('https://graceful-mink-900.convex.site/api/mutation'),
         headers: {'Content-Type': 'application/json'},
         body: json.encode({
+          'path': 'battles:createBattle',
           'args': {
             'playerName': widget.username,
             'duration': _selectedDuration,
@@ -96,7 +97,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
       try {
         final response = await http.get(
-          Uri.parse('https://graceful-mink-900.convex.site/api/query/battles.getBattle?id=$battleId'),
+          Uri.parse('https://graceful-mink-900.convex.site/api/query'),
         );
 
         if (response.statusCode == 200) {
