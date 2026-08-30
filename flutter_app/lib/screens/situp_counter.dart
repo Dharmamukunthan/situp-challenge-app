@@ -92,11 +92,9 @@ class _SitupCounterScreenState extends State<SitupCounterScreen> {
 
         double angle = 180;
 
-        if (ls != null && lh != null && lk != null &&
-            ls.inFrameLikelihood > 0.5 && lh.inFrameLikelihood > 0.5 && lk.inFrameLikelihood > 0.5) {
+        if (ls != null && lh != null && lk != null) {
           angle = calculateAngle(ls, lh, lk);
-        } else if (rs != null && rh != null && rk != null &&
-            rs.inFrameLikelihood > 0.5 && rh.inFrameLikelihood > 0.5 && rk.inFrameLikelihood > 0.5) {
+        } else if (rs != null && rh != null && rk != null) {
           angle = calculateAngle(rs, rh, rk);
         }
 
