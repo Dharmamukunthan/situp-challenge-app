@@ -1,50 +1,25 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import "@tensorflow/tfjs-backend-webgl";
-import * as poseDetection from "@tensorflow-models/pose-detection";
 
 /**
- * AI Situp Counter — full production implementation.
+ * Situp counter using pure motion detection — no AI model needed.
  *
- * Uses MoveNet Thunder (high accuracy) + dual detection:
- *   1. Shoulder-Hip-Knee angle at the hip joint
- *   2. Shoulder-hip vertical distance as % of frame height
+ * How it works:
+ * - Compares consecutive camera frames pixel-by-pixel
+ * - Divides frame into horizontal bands (top/mid/bottom)
+ * - Tracks where motion occurs in each band
+ * - Situp pattern: motion shifts from bottom → top → bottom
+ * - Much faster and more reliable than TensorFlow.js on mobile
  *
- * BOTH signals must agree for 10+ consecutive frames before a state
- * change is confirmed. This eliminates false positives from noise.
- *
- * Phone placement: SIDE VIEW (profile), back camera facing user.
+ * Phone placement: SIDE VIEW, back camera.
  */
 
-const CONFIRM_FRAMES = 10; // frames required to confirm state change
-const POSE_SCORE_MIN = 0.2;
-const COOLDOWN = 20; // frames after counting a rep (~0.6s)
+const MOTION_THRESHOLD = 30; // pixel difference to count as motion
+const BAND_COUNT = 8; // divide frame into 8 horizontal bands
+const REP_CONFIRM_FRAMES = 8; // frames of consistent motion needed
+const COOLDOWN_FRAMES = 20; // cooldown between reps (~0.7s)
+const SAMPLE_STEP = 12; // sample every 12th pixel for speed
 
-// Angle thresholds
-const LYING_ANGLE_MIN = 135;  // hip angle > 135° = lying
-const SITTING_ANGLE_MAX = 105; // hip angle < 105° = sitting
-
-// Distance thresholds (shoulder-hip Y distance as % of frame height)
-const LYING_DIST_MAX = 0.18;  // distance < 18% = lying
-const SITTING_DIST_MIN = 0.28; // distance > 28% = sitting
-
-// Smoothing
-const SMOOTH_FRAMES = 4;
-
-type Phase = "idle" | "waiting_up" | "waiting_down";
-
-function hipAngle(
-  s: { x: number; y: number },
-  h: { x: number; y: number },
-  k: { x: number; y: number }
-): number {
-  const hs = { x: s.x - h.x, y: s.y - h.y };
-  const hk = { x: k.x - h.x, y: k.y - h.y };
-  const dot = hs.x * hk.x + hs.y * hk.y;
-  const m1 = Math.sqrt(hs.x * hs.x + hs.y * hs.y);
-  const m2 = Math.sqrt(hk.x * hk.x + hk.y * hk.y);
-  if (m1 < 1 || m2 < 1) return 180;
-  return (Math.acos(Math.max(-1, Math.min(1, dot / (m1 * m2)))) * 180) / Math.PI;
-}
+type Phase = "idle" | "motion_up" | "motion_down";
 
 export function usePoseDetection(
   videoRef: React.RefObject<HTMLVideoElement | null>,
@@ -53,33 +28,39 @@ export function usePoseDetection(
 ) {
   const [repCount, setRepCount] = useState(0);
   const [isInUpPhase, setIsInUpPhase] = useState(false);
-  const [currentAngle, setCurrentAngle] = useState(180);
+  const [currentAngle, setCurrentAngle] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [modelLoaded, setModelLoaded] = useState(false);
   const [debugInfo, setDebugInfo] = useState("");
 
-  // Refs for the detection loop
   const animRef = useRef(0);
   const streamRef = useRef<MediaStream | null>(null);
-  const detectorRef = useRef<poseDetection.PoseDetector | null>(null);
   const repCountRef = useRef(0);
   const cooldownRef = useRef(0);
   const phaseRef = useRef<Phase>("idle");
-  const confirmRef = useRef(0); // frames confirming current state
-  const angleBuf = useRef<number[]>([]);
-  const distBuf = useRef<number[]>([]);
+  const confirmRef = useRef(0);
+  const prevFrameRef = useRef<Uint8ClampedArray | null>(null);
+  const bandMotionRef = useRef<number[]>(new Array(BAND_COUNT).fill(0));
 
-  // Camera
+  // Start camera
   const startCamera = useCallback(async () => {
     try {
       let stream: MediaStream;
       try {
         stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } },
+          video: {
+            facingMode: "environment",
+            width: { ideal: 640 },
+            height: { ideal: 480 },
+          },
         });
       } catch {
         stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } },
+          video: {
+            facingMode: "user",
+            width: { ideal: 640 },
+            height: { ideal: 480 },
+          },
         });
       }
       streamRef.current = stream;
@@ -88,8 +69,14 @@ export function usePoseDetection(
         await videoRef.current.play();
       }
       setError(null);
+      setModelLoaded(true); // no model needed, just camera
     } catch (err) {
-      setError("Camera error: " + (err as Error).message);
+      const name = (err as Error).name;
+      if (name === "NotAllowedError") {
+        setError("Camera permission denied. Allow it in settings.");
+      } else {
+        setError("Camera error: " + (err as Error).message);
+      }
     }
   }, [videoRef]);
 
@@ -97,285 +84,240 @@ export function usePoseDetection(
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
     if (animRef.current) cancelAnimationFrame(animRef.current);
-    detectorRef.current?.dispose();
-    detectorRef.current = null;
-    angleBuf.current = [];
-    distBuf.current = [];
+    prevFrameRef.current = null;
     setModelLoaded(false);
   }, []);
 
-  // Init with Thunder model (high accuracy)
-  const initDetector = useCallback(async () => {
-    try {
-      const tf = await import("@tensorflow/tfjs-core");
-      await tf.setBackend("webgl");
-      await tf.ready();
-      const detector = await poseDetection.createDetector(
-        poseDetection.SupportedModels.MoveNet,
-        { modelType: poseDetection.movenet.modelType.SINGLEPOSE_THUNDER }
-      );
-      detectorRef.current = detector;
-      setModelLoaded(true);
-      return detector;
-    } catch (err) {
-      console.error("Model init failed:", err);
-      setError("AI model failed to load.");
-      return null;
-    }
-  }, []);
-
-  // Main detection
-  const detect = useCallback(async () => {
+  // Core motion detection
+  const detectMotion = useCallback(() => {
     const video = videoRef.current;
     const canvas = canvasRef.current;
-    if (!video || !canvas || video.readyState < 2 || !detectorRef.current) return;
+    if (!video || !canvas || video.readyState < 2) return;
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
     try {
-      const poses = await detectorRef.current.estimatePoses(video);
-      if (poses.length === 0) {
-        setDebugInfo("No body detected — move into frame");
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const data = imageData.data;
+      const w = canvas.width;
+      const h = canvas.height;
+
+      if (!prevFrameRef.current) {
+        prevFrameRef.current = new Uint8ClampedArray(data);
         return;
       }
 
-      const kps = poses[0].keypoints;
-      const byName = new Map(kps.map((k) => [k.name, k]));
+      const prev = prevFrameRef.current;
 
-      // Find best visible side
-      const sides = [
-        { s: byName.get("left_shoulder"), h: byName.get("left_hip"), k: byName.get("left_knee") },
-        { s: byName.get("right_shoulder"), h: byName.get("right_hip"), k: byName.get("right_knee") },
-      ];
+      // Count motion in each band
+      const bandHeight = Math.floor(h / BAND_COUNT);
+      const bandMotion = new Array(BAND_COUNT).fill(0);
+      let totalMotionPixels = 0;
+      const bandPixelCounts = new Array(BAND_COUNT).fill(0);
 
-      let shoulder: { x: number; y: number } | null = null;
-      let hip: { x: number; y: number } | null = null;
-      let knee: { x: number; y: number } | null = null;
+      for (let y = 0; y < h; y += SAMPLE_STEP) {
+        const band = Math.min(Math.floor(y / bandHeight), BAND_COUNT - 1);
 
-      for (const side of sides) {
-        if (
-          side.s && side.h && side.k &&
-          (side.s.score ?? 0) > POSE_SCORE_MIN &&
-          (side.h.score ?? 0) > POSE_SCORE_MIN &&
-          (side.k.score ?? 0) > POSE_SCORE_MIN
-        ) {
-          shoulder = side.s;
-          hip = side.h;
-          knee = side.k;
-          break;
+        for (let x = 0; x < w; x += SAMPLE_STEP) {
+          const i = (y * w + x) * 4;
+          const diff =
+            Math.abs(data[i] - prev[i]) +
+            Math.abs(data[i + 1] - prev[i + 1]) +
+            Math.abs(data[i + 2] - prev[i + 2]);
+
+          if (diff > MOTION_THRESHOLD) {
+            bandMotion[band]++;
+            totalMotionPixels++;
+          }
+          bandPixelCounts[band]++;
         }
       }
 
-      // Fallback: average both sides
-      if (!shoulder || !hip || !knee) {
-        const [l, r] = sides;
-        if (l.s && r.s && l.h && r.h && l.k && r.k) {
-          const avg = (a: number, b: number) => (a + b) / 2;
-          shoulder = { x: avg(l.s.x, r.s.x), y: avg(l.s.y, r.s.y) };
-          hip = { x: avg(l.h.x, r.h.x), y: avg(l.h.y, r.h.y) };
-          knee = { x: avg(l.k.x, r.k.x), y: avg(l.k.y, r.k.y) };
-        }
+      // Normalize motion per band (0.0 to 1.0)
+      const normalizedMotion = bandMotion.map((m, i) =>
+        bandPixelCounts[i] > 0 ? m / bandPixelCounts[i] : 0
+      );
+
+      // Total motion ratio
+      const totalSampled = (w / SAMPLE_STEP) * (h / SAMPLE_STEP);
+      const totalMotionRatio = totalMotionPixels / totalSampled;
+
+      // Find where most motion is happening
+      // Top bands = upper body (face, torso when sitting)
+      // Bottom bands = lower body (legs, floor)
+      const topBands = normalizedMotion.slice(0, BAND_COUNT / 2);
+      const bottomBands = normalizedMotion.slice(BAND_COUNT / 2);
+
+      const topMotion =
+        topBands.reduce((a, b) => a + b, 0) / topBands.length;
+      const bottomMotion =
+        bottomBands.reduce((a, b) => a + b, 0) / bottomBands.length;
+
+      // Motion center: 0 = all motion at top, 1 = all motion at bottom
+      const motionCenter =
+        topMotion + bottomMotion > 0
+          ? bottomMotion / (topMotion + bottomMotion)
+          : 0.5;
+
+      // Display: map motion center to a 0-100 value
+      // 0 = motion at top (sitting up), 100 = motion at bottom (lying)
+      setCurrentAngle(Math.round((1 - motionCenter) * 100));
+
+      // Store for smoothing
+      bandMotionRef.current = normalizedMotion;
+
+      // Save current frame
+      prevFrameRef.current = new Uint8ClampedArray(data);
+
+      // Draw motion bands on canvas
+      ctx.clearRect(0, 0, w, h);
+      for (let i = 0; i < BAND_COUNT; i++) {
+        const intensity = Math.min(normalizedMotion[i] * 5, 1); // amplify for visibility
+        const y = i * bandHeight;
+        ctx.fillStyle =
+          i < BAND_COUNT / 2
+            ? `rgba(59, 130, 246, ${intensity * 0.5})`
+            : `rgba(34, 197, 94, ${intensity * 0.5})`;
+        ctx.fillRect(0, y, w, bandHeight);
+
+        // Draw motion bar
+        const barWidth = normalizedMotion[i] * w;
+        ctx.fillStyle =
+          i < BAND_COUNT / 2
+            ? "rgba(59, 130, 246, 0.8)"
+            : "rgba(34, 197, 94, 0.8)";
+        ctx.fillRect(0, y, barWidth, 2);
       }
 
-      if (!shoulder || !hip || !knee) {
-        setDebugInfo("Body not fully visible");
-        return;
-      }
+      // Draw labels
+      ctx.font = "bold 14px sans-serif";
+      ctx.fillStyle = "#fff";
+      ctx.strokeStyle = "#000";
+      ctx.lineWidth = 2;
+      ctx.strokeText(`Motion: ${(totalMotionRatio * 100).toFixed(0)}%`, 10, 25);
+      ctx.fillText(`Motion: ${(totalMotionRatio * 100).toFixed(0)}%`, 10, 25);
+      ctx.strokeText(
+        `Center: ${motionCenter < 0.4 ? "TOP" : motionCenter > 0.6 ? "BOTTOM" : "MIDDLE"}`,
+        10,
+        45
+      );
+      ctx.fillText(
+        `Center: ${motionCenter < 0.4 ? "TOP" : motionCenter > 0.6 ? "BOTTOM" : "MIDDLE"}`,
+        10,
+        45
+      );
 
-      // === SIGNAL 1: Hip angle ===
-      const rawAngle = hipAngle(shoulder, hip, knee);
-
-      // === SIGNAL 2: Shoulder-hip vertical distance ===
-      const frameH = video.videoHeight;
-      const rawDist = Math.abs(shoulder.y - hip.y) / frameH;
-
-      // Smooth both signals
-      angleBuf.current.push(rawAngle);
-      if (angleBuf.current.length > SMOOTH_FRAMES) angleBuf.current.shift();
-      const angle =
-        angleBuf.current.reduce((a, b) => a + b, 0) / angleBuf.current.length;
-
-      distBuf.current.push(rawDist);
-      if (distBuf.current.length > SMOOTH_FRAMES) distBuf.current.shift();
-      const dist =
-        distBuf.current.reduce((a, b) => a + b, 0) / distBuf.current.length;
-
-      setCurrentAngle(Math.round(angle));
-
-      // === CLASSIFY current position ===
-      const isLying =
-        angle > LYING_ANGLE_MIN && dist < LYING_DIST_MAX;
-      const isSitting =
-        angle < SITTING_ANGLE_MAX && dist > SITTING_DIST_MIN;
-
-      // === STATE MACHINE with confirmation ===
+      // Cooldown
       if (cooldownRef.current > 0) {
         cooldownRef.current--;
-      setDebugInfo(
-        `Cooldown ${cooldownRef.current} | Angle: ${Math.round(angle)}° Dist: ${(dist * 100).toFixed(0)}%`
-      );
-      // Still draw skeleton during cooldown
-      const cooldownCtx = canvas.getContext("2d");
-      if (cooldownCtx) {
-        drawSkeleton(cooldownCtx, canvas, video, kps, byName as Map<string, poseDetection.Keypoint>, shoulder, hip, knee, angle, "#666");
-      }
+        setDebugInfo(
+          `Cooldown ${cooldownRef.current} | Motion: ${(totalMotionRatio * 100).toFixed(0)}% | Center: ${motionCenter.toFixed(2)}`
+        );
         return;
       }
 
+      // Minimum motion required
+      if (totalMotionRatio < 0.01) {
+        setDebugInfo("No motion detected — move your body");
+        return;
+      }
+
+      // === SITUP DETECTION ===
+      // When doing a situp from side view:
+      // 1. Motion appears in upper bands (sitting up) → topMotion increases
+      // 2. Motion shifts to lower bands (lying back) → bottomMotion increases
+      //
+      // We detect: top motion dominant → bottom motion dominant = 1 rep
+
+      const TOP_DOMINANT = motionCenter < 0.4; // motion is in upper half
+      const BOTTOM_DOMINANT = motionCenter > 0.6; // motion is in lower half
+
       if (phaseRef.current === "idle") {
-        // Start: wait for lying down
-        if (isLying) {
+        // Start: look for motion in lower half (user lying down, slight movement)
+        if (BOTTOM_DOMINANT && totalMotionRatio > 0.02) {
           confirmRef.current++;
-          if (confirmRef.current >= CONFIRM_FRAMES) {
-            phaseRef.current = "waiting_up";
-            confirmRef.current = 0;
-            setIsInUpPhase(false);
-          }
-        } else {
-          confirmRef.current = 0;
-        }
-      } else if (phaseRef.current === "waiting_up") {
-        // User should sit up
-        if (isSitting) {
-          confirmRef.current++;
-          if (confirmRef.current >= CONFIRM_FRAMES) {
-            phaseRef.current = "waiting_down";
+          if (confirmRef.current >= REP_CONFIRM_FRAMES) {
+            phaseRef.current = "motion_up";
             confirmRef.current = 0;
             setIsInUpPhase(true);
           }
-        } else if (isLying) {
-          confirmRef.current = 0; // reset if went back to lying
         } else {
-          confirmRef.current = Math.max(0, confirmRef.current - 1); // partial match decays
+          confirmRef.current = Math.max(0, confirmRef.current - 1);
         }
-      } else if (phaseRef.current === "waiting_down") {
-        // User should lie back down
-        if (isLying) {
+      } else if (phaseRef.current === "motion_up") {
+        // Looking for motion to shift upward (user sitting up)
+        if (TOP_DOMINANT && totalMotionRatio > 0.02) {
           confirmRef.current++;
-          if (confirmRef.current >= CONFIRM_FRAMES) {
+          if (confirmRef.current >= REP_CONFIRM_FRAMES) {
+            phaseRef.current = "motion_down";
+            confirmRef.current = 0;
+          }
+        } else if (BOTTOM_DOMINANT) {
+          confirmRef.current = Math.max(0, confirmRef.current - 1);
+        }
+      } else if (phaseRef.current === "motion_down") {
+        // Looking for motion to shift back down (user lying back)
+        if (BOTTOM_DOMINANT && totalMotionRatio > 0.02) {
+          confirmRef.current++;
+          if (confirmRef.current >= REP_CONFIRM_FRAMES) {
             // REP COMPLETE!
             repCountRef.current += 1;
             setRepCount(repCountRef.current);
-            cooldownRef.current = COOLDOWN;
+            cooldownRef.current = COOLDOWN_FRAMES;
             phaseRef.current = "idle";
             confirmRef.current = 0;
             setIsInUpPhase(false);
           }
-        } else if (isSitting) {
-          confirmRef.current = 0;
-        } else {
+        } else if (TOP_DOMINANT) {
           confirmRef.current = Math.max(0, confirmRef.current - 1);
         }
       }
 
-      // Debug
-      const posLabel = isLying ? "LYING" : isSitting ? "SITTING" : "MOVING";
-      const phaseLabel = phaseRef.current;
-      const conf = confirmRef.current;
+      const posLabel = TOP_DOMINANT
+        ? "UP"
+        : BOTTOM_DOMINANT
+          ? "DOWN"
+          : "MIDDLE";
       setDebugInfo(
-        `${posLabel} | Angle: ${Math.round(angle)}° Dist: ${(dist * 100).toFixed(0)}% | Phase: ${phaseLabel} | Confirm: ${conf}/${CONFIRM_FRAMES}`
+        `Phase: ${phaseRef.current} | Motion: ${(totalMotionRatio * 100).toFixed(0)}% | Pos: ${posLabel} | Conf: ${confirmRef.current}/${REP_CONFIRM_FRAMES}`
       );
-
-      // Draw skeleton
-      const drawCtx = canvas.getContext("2d");
-      if (drawCtx) {
-        drawSkeleton(drawCtx, canvas, video, kps, byName as Map<string, poseDetection.Keypoint>, shoulder, hip, knee, angle, isLying ? "#ef4444" : isSitting ? "#22c55e" : "#f59e0b");
-      }
-    } catch (err) {
-      setDebugInfo("Error: " + (err as Error).message);
+    } catch {
+      // Canvas tainted
     }
   }, [videoRef, canvasRef]);
 
-  // Draw skeleton helper
-  function drawSkeleton(
-    ctx: CanvasRenderingContext2D,
-    canvas: HTMLCanvasElement,
-    video: HTMLVideoElement,
-    kps: poseDetection.Keypoint[],
-    byName: Map<string, poseDetection.Keypoint>,
-    shoulder: { x: number; y: number },
-    hip: { x: number; y: number },
-    knee: { x: number; y: number },
-    angle: number,
-    color: string
-  ) {
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    const line = (
-      a: { x: number; y: number },
-      b: { x: number; y: number },
-      c: string,
-      w: number
-    ) => {
-      ctx.beginPath();
-      ctx.moveTo(a.x, a.y);
-      ctx.lineTo(b.x, b.y);
-      ctx.strokeStyle = c;
-      ctx.lineWidth = w;
-      ctx.stroke();
-    };
-
-    // All body connections
-    const conns: [string, string][] = [
-      ["left_shoulder", "right_shoulder"],
-      ["left_shoulder", "left_elbow"], ["right_shoulder", "right_elbow"],
-      ["left_elbow", "left_wrist"], ["right_elbow", "right_wrist"],
-      ["left_hip", "right_hip"],
-      ["left_hip", "left_knee"], ["right_hip", "right_knee"],
-      ["left_knee", "left_ankle"], ["right_knee", "right_ankle"],
-    ];
-
-    for (const [a, b] of conns) {
-      const ka = byName.get(a);
-      const kb = byName.get(b);
-      if (ka && kb && (ka.score ?? 0) > POSE_SCORE_MIN && (kb.score ?? 0) > POSE_SCORE_MIN) {
-        line(ka, kb, "rgba(100,100,100,0.3)", 2);
-      }
-    }
-
-    // Key chain: shoulder → hip → knee (thick, colored)
-    line(shoulder, hip, color, 4);
-    line(hip, knee, color, 4);
-
-    // Keypoints
-    for (const kp of kps) {
-      if ((kp.score ?? 0) > POSE_SCORE_MIN) {
-        const isKey = kp.name?.includes("shoulder") || kp.name?.includes("hip") || kp.name?.includes("knee");
-        ctx.beginPath();
-        ctx.arc(kp.x, kp.y, isKey ? 6 : 3, 0, 2 * Math.PI);
-        ctx.fillStyle = isKey ? color : "rgba(100,100,200,0.5)";
-        ctx.fill();
-      }
-    }
-
-    // Angle at hip
-    ctx.font = "bold 22px sans-serif";
-    ctx.fillStyle = color;
-    ctx.strokeStyle = "#000";
-    ctx.lineWidth = 3;
-    const txt = `${Math.round(angle)}°`;
-    ctx.strokeText(txt, hip.x + 15, hip.y - 10);
-    ctx.fillText(txt, hip.x + 15, hip.y - 10);
-  }
-
   // Animation loop
   useEffect(() => {
-    if (!enabled) { stopCamera(); return; }
+    if (!enabled) {
+      stopCamera();
+      return;
+    }
+
     let running = true;
+
     const loop = () => {
       if (!running) return;
-      detect().then(() => {
-        if (running) animRef.current = requestAnimationFrame(loop);
-      });
+      detectMotion();
+      animRef.current = requestAnimationFrame(loop);
     };
+
     const init = async () => {
       await startCamera();
-      if (!detectorRef.current) await initDetector();
       if (running) loop();
     };
+
     init();
-    return () => { running = false; stopCamera(); };
-  }, [enabled, startCamera, stopCamera, detect, initDetector]);
+
+    return () => {
+      running = false;
+      stopCamera();
+    };
+  }, [enabled, startCamera, stopCamera, detectMotion]);
 
   const resetCount = useCallback(() => {
     repCountRef.current = 0;
@@ -383,8 +325,7 @@ export function usePoseDetection(
     cooldownRef.current = 0;
     phaseRef.current = "idle";
     confirmRef.current = 0;
-    angleBuf.current = [];
-    distBuf.current = [];
+    prevFrameRef.current = null;
     setIsInUpPhase(false);
   }, []);
 
