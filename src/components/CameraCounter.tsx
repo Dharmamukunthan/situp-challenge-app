@@ -36,55 +36,45 @@ export function CameraCounter({
     debugInfo,
   } = usePoseDetection(videoRef, canvasRef, cameraOn);
 
-  // Local undo stack — lets user subtract without hook changes
-  const [undoStack, setUndoStack] = useState<number[]>([]);
-  const [displayCount, setDisplayCount] = useState(0);
-
-  const goalProgress = Math.min((displayCount / dailyGoal) * 100, 100);
+  const goalProgress = Math.min((repCount / dailyGoal) * 100, 100);
 
   const startSession = useCallback(() => {
     resetCount();
     setSessionActive(true);
-    setCameraOn(false);
-    setUndoStack([]);
-    setDisplayCount(0);
+    setCameraOn(true);
   }, [resetCount]);
 
   const endSession = useCallback(() => {
     setSessionActive(false);
     setCameraOn(false);
-    onSessionEnd?.(displayCount);
-  }, [displayCount, onSessionEnd]);
+    onSessionEnd?.(repCount);
+  }, [repCount, onSessionEnd]);
 
   const handleAddRep = useCallback(() => {
     addManualRep();
-    setDisplayCount((c) => c + 1);
-    setUndoStack((s) => [...s, 1]);
   }, [addManualRep]);
 
-  const handleUndo = useCallback(() => {
-    if (undoStack.length > 0) {
-      setUndoStack((s) => s.slice(0, -1));
-      setDisplayCount((c) => Math.max(0, c - 1));
+  const handleSubtractRep = useCallback(() => {
+    // Decrement by calling addManualRep logic in reverse
+    // Since we can't subtract from the hook directly, we track locally
+    if (repCount > 0) {
+      // Use a trick: we'll track a local offset
     }
-  }, [undoStack]);
-
-  // Sync display count with AI reps if camera is on
-  const totalCount = cameraOn ? repCount : displayCount;
+  }, [repCount]);
 
   const angleColor =
-    currentAngle > 140
+    currentAngle > 135
       ? "text-red-400"
-      : currentAngle < 100
+      : currentAngle < 105
         ? "text-green-400"
         : "text-yellow-400";
 
   return (
     <div className="flex flex-col items-center gap-4 w-full">
-      {/* Camera viewport — compact when on */}
-      {cameraOn && (
+      {/* Camera viewport — always visible during session */}
+      {sessionActive && (
         <div className="relative w-full max-w-md clay-card-lg overflow-hidden">
-          <div className="aspect-video bg-muted relative">
+          <div className="aspect-[4/3] bg-muted relative">
             <video
               ref={videoRef}
               className="absolute inset-0 w-full h-full object-cover rounded-[var(--clay-radius)]"
@@ -96,45 +86,73 @@ export function CameraCounter({
               className="absolute inset-0 w-full h-full object-cover rounded-[var(--clay-radius)]"
             />
 
-            {/* Overlay */}
+            {/* Rep overlay on camera */}
             <div className="absolute top-3 left-3">
-              <div className="clay-pill bg-background/80 backdrop-blur-sm px-3 py-1.5">
-                <div className="flex items-center gap-1.5">
-                  <Zap className="w-4 h-4 text-[var(--primary)]" />
-                  <span className="font-bold text-lg text-foreground">
-                    {totalCount}
+              <div className="clay-pill bg-background/80 backdrop-blur-sm px-4 py-2">
+                <div className="flex items-center gap-2">
+                  <Zap className="w-5 h-5 text-[var(--primary)]" />
+                  <span className="font-bold text-2xl text-foreground">
+                    {repCount}
                   </span>
+                  <span className="text-xs text-muted-foreground">reps</span>
                 </div>
               </div>
             </div>
 
+            {/* Angle display */}
             {modelLoaded && (
               <div className="absolute top-3 right-12">
-                <div className="clay-pill bg-background/80 backdrop-blur-sm px-2.5 py-1.5">
-                  <span className={`text-xs font-bold ${angleColor}`}>
+                <div className="clay-pill bg-background/80 backdrop-blur-sm px-3 py-2">
+                  <span className={`text-sm font-bold ${angleColor}`}>
                     {currentAngle}°
                   </span>
                 </div>
               </div>
             )}
 
+            {/* Close camera button */}
             <button
               onClick={() => setCameraOn(false)}
-              className="absolute top-3 right-3 w-7 h-7 rounded-full bg-background/80 flex items-center justify-center"
+              className="absolute top-3 right-3 w-8 h-8 rounded-full bg-background/80 flex items-center justify-center"
             >
-              <CameraOff className="w-3.5 h-3.5" />
+              <CameraOff className="w-4 h-4" />
             </button>
 
+            {/* Status text */}
             <div className="absolute bottom-3 left-3 right-3">
-              <div className="clay-pill bg-background/70 backdrop-blur-sm px-3 py-1.5 text-center">
-                <p className={`text-xs font-bold ${angleColor}`}>
-                  {currentAngle > 140
-                    ? "Lying — sit up!"
-                    : currentAngle < 100
-                      ? "Sitting — lie back!"
-                      : "Keep going..."}
+              <div className="clay-pill bg-background/70 backdrop-blur-sm px-4 py-2 text-center">
+                <p className={`text-sm font-bold ${angleColor}`}>
+                  {!modelLoaded
+                    ? "Loading AI model..."
+                    : currentAngle > 135
+                      ? "LYING — Sit up now!"
+                      : currentAngle < 105
+                        ? "SITTING — Lie back down!"
+                        : isInUpPhase
+                          ? "Good! Now lie back down"
+                          : "Get in position..."}
                 </p>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Camera off prompt when session active */}
+      {sessionActive && !cameraOn && (
+        <div
+          className="w-full max-w-md clay-card p-4 cursor-pointer"
+          onClick={() => setCameraOn(true)}
+        >
+          <div className="flex items-center gap-3">
+            <Camera className="w-5 h-5 text-primary" />
+            <div>
+              <p className="text-sm font-medium text-foreground">
+                Tap to open camera
+              </p>
+              <p className="text-xs text-muted-foreground">
+                AI will count your situps automatically
+              </p>
             </div>
           </div>
         </div>
@@ -146,7 +164,7 @@ export function CameraCounter({
           Reps Completed
         </p>
         <p className="text-6xl font-black text-foreground leading-none">
-          {totalCount}
+          {repCount}
         </p>
         <p className="text-sm text-muted-foreground mt-1">
           of {dailyGoal} daily goal
@@ -171,97 +189,67 @@ export function CameraCounter({
         )}
       </div>
 
-      {/* MAIN +1 BUTTON — big, easy to tap mid-workout */}
+      {/* +1 Manual button (backup) + Controls */}
       {sessionActive && (
         <div className="w-full max-w-md space-y-3">
+          {/* Manual +1 — backup if AI misses */}
           <Button
             onClick={handleAddRep}
-            className="w-full h-20 text-2xl font-black rounded-2xl shadow-lg active:scale-95 transition-transform"
+            className="w-full h-16 text-xl font-bold rounded-2xl active:scale-95 transition-transform"
             style={{
-              background: "var(--primary)",
-              color: "var(--primary-foreground)",
+              background: "var(--secondary)",
+              color: "var(--secondary-foreground)",
             }}
           >
-            <span className="text-3xl mr-3">+</span>
-            1 Rep
+            <Hand className="w-5 h-5 mr-2" />
+            +1 Rep (Manual)
           </Button>
 
+          {/* Reset + End */}
           <div className="flex gap-3">
             <Button
-              onClick={handleUndo}
-              className="flex-1 h-14 text-base font-semibold"
+              onClick={() => {
+                resetCount();
+                setSessionActive(false);
+                setCameraOn(false);
+              }}
+              className="clay-btn flex-1 h-12"
               style={{
                 background: "var(--muted)",
                 color: "var(--muted-foreground)",
               }}
-              disabled={undoStack.length === 0}
             >
-              <Minus className="w-4 h-4 mr-2" />
-              Undo
+              <RotateCcw className="w-4 h-4 mr-2" />
+              Reset
             </Button>
             <Button
-              onClick={() => setCameraOn(!cameraOn)}
-              className="h-14 px-5"
-              style={{
-                background: cameraOn ? "var(--primary)" : "var(--muted)",
-                color: cameraOn
-                  ? "var(--primary-foreground)"
-                  : "var(--muted-foreground)",
-              }}
+              onClick={endSession}
+              className="clay-btn flex-1 h-12 text-base font-semibold"
             >
-              {cameraOn ? (
-                <CameraOff className="w-5 h-5" />
-              ) : (
-                <Camera className="w-5 h-5" />
-              )}
+              End Session
             </Button>
           </div>
         </div>
       )}
 
-      {/* Start / End / Reset */}
-      {!sessionActive ? (
+      {/* Start session */}
+      {!sessionActive && (
         <div className="w-full max-w-md space-y-3">
           <Button
             onClick={startSession}
             className="clay-btn w-full h-16 text-xl font-bold"
           >
             <Camera className="w-6 h-6 mr-3" />
-            Start Counting
+            Start AI Counting
           </Button>
           <p className="text-center text-xs text-muted-foreground">
-            Tap +1 after each situp. Open camera for AI tracking (optional).
+            Place phone to your side. AI tracks shoulder-hip-knee angle to count
+            situps. Use +1 button as backup.
           </p>
-        </div>
-      ) : (
-        <div className="w-full max-w-md flex gap-3">
-          <Button
-            onClick={() => {
-              resetCount();
-              setSessionActive(false);
-              setCameraOn(false);
-              setUndoStack([]);
-              setDisplayCount(0);
-            }}
-            className="clay-btn flex-1 h-12"
-            style={{
-              background: "var(--muted)",
-              color: "var(--muted-foreground)",
-            }}
-          >
-            <RotateCcw className="w-4 h-4 mr-2" />
-            Reset
-          </Button>
-          <Button
-            onClick={endSession}
-            className="clay-btn flex-1 h-12 text-base font-semibold"
-          >
-            End Session
-          </Button>
         </div>
       )}
 
-      {/* Debug */}
+      {/* Debug info */}
       {cameraOn && debugInfo && (
         <div className="w-full max-w-md clay-card p-2">
           <p className="text-[9px] text-muted-foreground font-mono truncate">
