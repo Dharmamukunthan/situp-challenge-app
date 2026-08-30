@@ -32,11 +32,11 @@ class SitupDetector {
   int _cooldown = 0;
   int _repCount = 0;
 
-  // Thresholds
-  static const double lyingAngle = 140; // angle > 140 = lying flat
-  static const double sittingAngle = 100; // angle < 100 = sitting up
-  static const int confirmFrames = 8; // frames needed to confirm
-  static const int cooldownFrames = 20; // cooldown between reps
+  // Thresholds — wide to work from various phone angles
+  static const double lyingAngle = 125; // angle > 125 = lying flat
+  static const double sittingAngle = 105; // angle < 105 = sitting up
+  static const int confirmFrames = 5; // frames needed to confirm (faster detection)
+  static const int cooldownFrames = 10; // cooldown between reps (0.3s)
 
   int get repCount => _repCount;
   SitupPhase get phase => _phase;

@@ -4,7 +4,8 @@ import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
 import '../utils/pose_utils.dart';
 
 class SitupCounterScreen extends StatefulWidget {
-  const SitupCounterScreen({super.key});
+  final Function(int reps)? onSessionEnd;
+  const SitupCounterScreen({super.key, this.onSessionEnd});
 
   @override
   State<SitupCounterScreen> createState() => _SitupCounterScreenState();
@@ -19,11 +20,14 @@ class _SitupCounterScreenState extends State<SitupCounterScreen> {
   bool _isProcessing = false;
   double _currentAngle = 180;
   int _repCount = 0;
-  String _status = "Start counting";
+  int _manualReps = 0;
+  String _status = "Tap Start to begin";
   String _phaseLabel = "IDLE";
   int _confirmProgress = 0;
+  bool _showSkeleton = false;
+  int _rawAngleSamples = 0;
+  String _debugInfo = "";
 
-  // Claymorphism colors
   static const Color _bgColor = Color(0xFFFDF5F0);
   static const Color _cardColor = Color(0xFFFFF0E8);
   static const Color _accentColor = Color(0xFFE8734A);
@@ -49,18 +53,28 @@ class _SitupCounterScreenState extends State<SitupCounterScreen> {
         return;
       }
 
-      final backCamera = cameras.firstWhere(
-        (c) => c.lensDirection == CameraLensDirection.back,
-        orElse: () => cameras.first,
-      );
+      // Try back camera first, then front
+      CameraDescription? selectedCamera;
+      try {
+        selectedCamera = cameras.firstWhere(
+          (c) => c.lensDirection == CameraLensDirection.back,
+        );
+      } catch (_) {
+        selectedCamera = cameras.first;
+      }
 
       _cameraController = CameraController(
-        backCamera,
+        selectedCamera,
         ResolutionPreset.medium,
         enableAudio: false,
       );
 
       await _cameraController!.initialize();
+
+      // Check if streaming is supported
+      if (_cameraController!.value.isStreamingImages) {
+        await _cameraController!.stopImageStream();
+      }
 
       await _cameraController!.startImageStream((CameraImage image) {
         if (!_isProcessing) _processFrame(image);
@@ -68,7 +82,7 @@ class _SitupCounterScreenState extends State<SitupCounterScreen> {
 
       setState(() {
         _isCameraInitialized = true;
-        _status = "Camera ready - lie down to start";
+        _status = "Camera ready — position yourself";
       });
     } catch (e) {
       setState(() => _status = "Camera error: $e");
@@ -98,33 +112,79 @@ class _SitupCounterScreenState extends State<SitupCounterScreen> {
         final rk = pose.landmarks[PoseLandmarkType.rightKnee];
 
         double angle = 180;
+        String side = "none";
+        int keypointsFound = 0;
 
+        // Try left side first
         if (ls != null && lh != null && lk != null) {
           angle = calculateAngle(ls, lh, lk);
-        } else if (rs != null && rh != null && rk != null) {
-          angle = calculateAngle(rs, rh, rk);
+          side = "LEFT";
+          keypointsFound = 3;
         }
+        // Try right side
+        else if (rs != null && rh != null && rk != null) {
+          angle = calculateAngle(rs, rh, rk);
+          side = "RIGHT";
+          keypointsFound = 3;
+        }
+        // Try averaging both sides
+        else if (ls != null && lh != null && lk != null && rs != null && rh != null && rk != null) {
+          double leftAngle = calculateAngle(ls, lh, lk);
+          double rightAngle = calculateAngle(rs, rh, rk);
+          angle = (leftAngle + rightAngle) / 2;
+          side = "BOTH";
+          keypointsFound = 6;
+        }
+        // Try partial detection
+        else {
+          // Try to get any angle we can
+          if (lh != null && lk != null) {
+            // Use shoulder midpoint if available
+            if (ls != null) {
+              angle = calculateAngle(ls, lh, lk);
+              side = "LEFT-partial";
+              keypointsFound = 3;
+            } else if (rs != null) {
+              angle = calculateAngle(rs, lh, lk);
+              side = "MIXED";
+              keypointsFound = 3;
+            }
+          }
+        }
+
+        _rawAngleSamples++;
+        final debug = "Keypoints:$keypointsFound Side:$side Angle:${angle.toStringAsFixed(0)}";
 
         setState(() {
           _currentAngle = angle;
           _phaseLabel = _situpDetector.phase.name.toUpperCase();
           _confirmProgress = _situpDetector.confirmCount;
+          _debugInfo = debug;
         });
 
-        if (_situpDetector.processAngle(angle)) {
-          setState(() {
-            _repCount = _situpDetector.repCount;
-            _status = "Rep #$_repCount counted!";
-          });
-        } else {
-          if (angle > SitupDetector.lyingAngle) {
-            setState(() => _status = "LYING - Sit up!");
-          } else if (angle < SitupDetector.sittingAngle) {
-            setState(() => _status = "SITTING - Lie back down!");
+        if (keypointsFound >= 3) {
+          if (_situpDetector.processAngle(angle)) {
+            setState(() {
+              _repCount = _situpDetector.repCount;
+              _status = "✅ Rep #$_repCount counted!";
+            });
           } else {
-            setState(() => _status = "Moving...");
+            if (angle > SitupDetector.lyingAngle) {
+              setState(() => _status = "↓ LYING — sit up!");
+            } else if (angle < SitupDetector.sittingAngle) {
+              setState(() => _status = "↑ SITTING — lie back!");
+            } else {
+              setState(() => _status = "↔ Moving...");
+            }
           }
+        } else {
+          setState(() => _status = "⚠️ Only $keypointsFound keypoints — adjust position");
         }
+      } else {
+        setState(() {
+          _status = "❌ No body detected — move into view";
+          _debugInfo = "No pose found";
+        });
       }
     } catch (_) {}
 
@@ -154,7 +214,11 @@ class _SitupCounterScreenState extends State<SitupCounterScreen> {
 
   void _startSession() async {
     _situpDetector.reset();
-    setState(() { _repCount = 0; _status = "Starting camera..."; });
+    setState(() {
+      _repCount = 0;
+      _manualReps = 0;
+      _status = "Starting camera...";
+    });
     await _startCamera();
   }
 
@@ -162,21 +226,44 @@ class _SitupCounterScreenState extends State<SitupCounterScreen> {
     await _cameraController?.stopImageStream();
     await _cameraController?.dispose();
     _cameraController = null;
+    final totalReps = _repCount + _manualReps;
     setState(() {
       _isCameraInitialized = false;
-      _status = "Session ended - $_repCount reps";
+      _status = "Session ended — $totalReps reps";
     });
+    if (widget.onSessionEnd != null) {
+      widget.onSessionEnd!(totalReps);
+    }
   }
 
   void _resetSession() {
     _situpDetector.reset();
     setState(() {
       _repCount = 0;
+      _manualReps = 0;
       _currentAngle = 180;
-      _status = "Reset - ready to start";
+      _status = "Reset — ready";
       _phaseLabel = "IDLE";
       _confirmProgress = 0;
+      _rawAngleSamples = 0;
+      _debugInfo = "";
     });
+  }
+
+  void _addManualRep() {
+    setState(() {
+      _manualReps++;
+      _status = "Manual +1 (total: ${_repCount + _manualReps})";
+    });
+  }
+
+  void _undoRep() {
+    if (_manualReps > 0) {
+      setState(() {
+        _manualReps--;
+        _status = "Undid last rep (total: ${_repCount + _manualReps})";
+      });
+    }
   }
 
   @override
@@ -186,14 +273,10 @@ class _SitupCounterScreenState extends State<SitupCounterScreen> {
     super.dispose();
   }
 
+  int get _totalReps => _repCount + _manualReps;
+
   @override
   Widget build(BuildContext context) {
-    final angleColor = _currentAngle > SitupDetector.lyingAngle
-        ? _accentColor
-        : _currentAngle < SitupDetector.sittingAngle
-            ? const Color(0xFF4CAF50)
-            : _accentColor;
-
     return Scaffold(
       backgroundColor: _bgColor,
       body: SafeArea(
@@ -204,29 +287,25 @@ class _SitupCounterScreenState extends State<SitupCounterScreen> {
               // Stats row
               Row(
                 children: [
-                  _buildStatCard("$_repCount", "Reps", Icons.local_fire_department, _accentColor),
+                  _buildStatCard("$_totalReps", "Total", Icons.local_fire_department, _accentColor),
                   const SizedBox(width: 10),
-                  _buildStatCard(_situpDetector.repCount > 0 ? "${_situpDetector.repCount}" : "0", "Session", Icons.trending_up, const Color(0xFF4CAF50)),
+                  _buildStatCard("$_repCount", "AI", Icons.smart_toy, const Color(0xFF4CAF50)),
                   const SizedBox(width: 10),
-                  _buildStatCard("${(_repCount / 100 * 100).toInt().clamp(0, 100)}%", "Goal", Icons.track_changes, _accentColor),
+                  _buildStatCard("$_manualReps", "Manual", Icons.touch_app, const Color(0xFF2196F3)),
                 ],
               ),
 
               const SizedBox(height: 16),
 
-              // Camera card
+              // Camera / placeholder
               Container(
                 width: double.infinity,
-                height: _isCameraInitialized ? 280 : 200,
+                height: _isCameraInitialized ? 280 : 180,
                 decoration: BoxDecoration(
                   color: _cardColor,
                   borderRadius: BorderRadius.circular(24),
                   boxShadow: [
-                    BoxShadow(
-                      color: _accentColor.withAlpha(20),
-                      blurRadius: 20,
-                      offset: const Offset(0, 8),
-                    ),
+                    BoxShadow(color: _accentColor.withAlpha(20), blurRadius: 20, offset: const Offset(0, 8)),
                   ],
                 ),
                 clipBehavior: Clip.antiAlias,
@@ -234,44 +313,45 @@ class _SitupCounterScreenState extends State<SitupCounterScreen> {
                     ? Stack(
                         children: [
                           CameraPreview(_cameraController!),
+                          // Angle badge
                           Positioned(
                             top: 12, left: 12,
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                              decoration: BoxDecoration(
-                                color: Colors.white.withAlpha(200),
-                                borderRadius: BorderRadius.circular(20),
-                                boxShadow: [
-                                  BoxShadow(color: Colors.black.withAlpha(15), blurRadius: 10),
-                                ],
-                              ),
-                              child: Text("⚡ $_repCount reps",
-                                  style: TextStyle(color: _accentColor, fontSize: 14, fontWeight: FontWeight.bold)),
-                            ),
+                            child: _buildBadge("${_currentAngle.toStringAsFixed(0)}°", _getAngleColor()),
                           ),
+                          // Reps badge
                           Positioned(
                             top: 12, right: 12,
+                            child: _buildBadge("⚡ $_totalReps", _accentColor),
+                          ),
+                          // Status
+                          Positioned(
+                            bottom: 12, left: 12, right: 12,
                             child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                               decoration: BoxDecoration(
-                                color: Colors.white.withAlpha(200),
-                                borderRadius: BorderRadius.circular(20),
+                                color: Colors.white.withAlpha(220),
+                                borderRadius: BorderRadius.circular(16),
                               ),
-                              child: Text("${_currentAngle.toStringAsFixed(0)}°",
-                                  style: TextStyle(color: _textColor, fontSize: 14, fontWeight: FontWeight.bold)),
+                              child: Text(_status,
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(color: _textColor, fontSize: 13, fontWeight: FontWeight.w600)),
                             ),
                           ),
+                          // +1 button floating
                           Positioned(
-                            bottom: 12, left: 0, right: 0,
-                            child: Center(
+                            bottom: 60, right: 16,
+                            child: GestureDetector(
+                              onTap: _addManualRep,
                               child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                padding: const EdgeInsets.all(16),
                                 decoration: BoxDecoration(
-                                  color: Colors.white.withAlpha(200),
-                                  borderRadius: BorderRadius.circular(20),
+                                  color: _accentColor,
+                                  shape: BoxShape.circle,
+                                  boxShadow: [
+                                    BoxShadow(color: _accentColor.withAlpha(80), blurRadius: 12, offset: const Offset(0, 4)),
+                                  ],
                                 ),
-                                child: Text(_status,
-                                    style: TextStyle(color: angleColor, fontSize: 13, fontWeight: FontWeight.w600)),
+                                child: const Icon(Icons.add, color: Colors.white, size: 28),
                               ),
                             ),
                           ),
@@ -296,35 +376,24 @@ class _SitupCounterScreenState extends State<SitupCounterScreen> {
                 decoration: BoxDecoration(
                   color: _cardColor,
                   borderRadius: BorderRadius.circular(24),
-                  boxShadow: [
-                    BoxShadow(
-                      color: _accentColor.withAlpha(20),
-                      blurRadius: 20,
-                      offset: const Offset(0, 8),
-                    ),
-                  ],
+                  boxShadow: [BoxShadow(color: _accentColor.withAlpha(20), blurRadius: 20, offset: const Offset(0, 8))],
                 ),
                 child: Column(
                   children: [
                     Container(
                       padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: _accentColor.withAlpha(30),
-                        shape: BoxShape.circle,
-                      ),
+                      decoration: BoxDecoration(color: _accentColor.withAlpha(30), shape: BoxShape.circle),
                       child: Icon(Icons.emoji_events, size: 40, color: _accentColor),
                     ),
                     const SizedBox(height: 16),
-                    Text("$_repCount reps", style: TextStyle(fontSize: 36, fontWeight: FontWeight.w900, color: _textColor)),
+                    Text("$_totalReps reps",
+                        style: TextStyle(fontSize: 48, fontWeight: FontWeight.w900, color: _textColor)),
                     const SizedBox(height: 4),
                     Text(_status, style: TextStyle(fontSize: 14, color: _subtextColor)),
                     const SizedBox(height: 8),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(20),
-                      ),
+                      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20)),
                       child: Text("Goal: 100", style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: _subtextColor)),
                     ),
                   ],
@@ -340,13 +409,7 @@ class _SitupCounterScreenState extends State<SitupCounterScreen> {
                 decoration: BoxDecoration(
                   color: _cardColor,
                   borderRadius: BorderRadius.circular(24),
-                  boxShadow: [
-                    BoxShadow(
-                      color: _accentColor.withAlpha(20),
-                      blurRadius: 20,
-                      offset: const Offset(0, 8),
-                    ),
-                  ],
+                  boxShadow: [BoxShadow(color: _accentColor.withAlpha(20), blurRadius: 20, offset: const Offset(0, 8))],
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -361,16 +424,16 @@ class _SitupCounterScreenState extends State<SitupCounterScreen> {
                             Text("Daily Goal", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: _textColor)),
                           ],
                         ),
-                        Text("$_repCount/100", style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: _textColor)),
+                        Text("$_totalReps/100", style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: _textColor)),
                       ],
                     ),
                     const SizedBox(height: 12),
                     ClipRRect(
                       borderRadius: BorderRadius.circular(8),
                       child: LinearProgressIndicator(
-                        value: (_repCount / 100).clamp(0.0, 1.0),
+                        value: (_totalReps / 100).clamp(0.0, 1.0),
                         backgroundColor: Colors.white,
-                        valueColor: AlwaysStoppedAnimation(_repCount >= 100 ? const Color(0xFF4CAF50) : _accentColor),
+                        valueColor: AlwaysStoppedAnimation(_totalReps >= 100 ? const Color(0xFF4CAF50) : _accentColor),
                         minHeight: 8,
                       ),
                     ),
@@ -380,52 +443,84 @@ class _SitupCounterScreenState extends State<SitupCounterScreen> {
 
               const SizedBox(height: 16),
 
-              // Start/End buttons
+              // Manual +1 button (big, always visible)
+              if (_isCameraInitialized)
+                SizedBox(
+                  width: double.infinity, height: 60,
+                  child: ElevatedButton(
+                    onPressed: _addManualRep,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _accentColor,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                      elevation: 0,
+                    ),
+                    child: const Text("+1 Rep", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                  ),
+                ),
+
+              if (_isCameraInitialized) const SizedBox(height: 12),
+
+              // Action buttons
               Row(
                 children: [
+                  if (_isCameraInitialized)
+                    Expanded(
+                      child: SizedBox(
+                        height: 52,
+                        child: ElevatedButton(
+                          onPressed: _undoRep,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.white,
+                            foregroundColor: _textColor,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                            elevation: 0,
+                          ),
+                          child: const Text("Undo"),
+                        ),
+                      ),
+                    ),
+                  if (_isCameraInitialized) const SizedBox(width: 10),
                   Expanded(
+                    flex: 2,
                     child: SizedBox(
-                      height: 56,
+                      height: 52,
                       child: ElevatedButton(
                         onPressed: _isCameraInitialized ? _endSession : _startSession,
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: _accentColor,
+                          backgroundColor: _isCameraInitialized ? const Color(0xFFE8534A) : _accentColor,
                           foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                           elevation: 0,
                         ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(_isCameraInitialized ? Icons.stop : Icons.camera_alt, size: 20),
-                            const SizedBox(width: 8),
-                            Text(_isCameraInitialized ? "End Session" : "Start Session",
-                                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                          ],
+                        child: Text(_isCameraInitialized ? "End Session" : "Start AI Counting",
+                            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                      ),
+                    ),
+                  ),
+                  if (_isCameraInitialized) const SizedBox(width: 10),
+                  if (_isCameraInitialized)
+                    Expanded(
+                      child: SizedBox(
+                        height: 52,
+                        child: ElevatedButton(
+                          onPressed: _resetSession,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.white,
+                            foregroundColor: _textColor,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                            elevation: 0,
+                          ),
+                          child: const Text("Reset"),
                         ),
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 12),
-                  SizedBox(
-                    height: 56, width: 56,
-                    child: ElevatedButton(
-                      onPressed: _resetSession,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.white,
-                        foregroundColor: _textColor,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-                        elevation: 0,
-                      ),
-                      child: const Icon(Icons.refresh, size: 22),
-                    ),
-                  ),
                 ],
               ),
 
               const SizedBox(height: 16),
 
-              // Debug info
+              // Debug info (shown when camera is on)
               if (_isCameraInitialized)
                 Container(
                   width: double.infinity,
@@ -434,11 +529,51 @@ class _SitupCounterScreenState extends State<SitupCounterScreen> {
                     color: _cardColor,
                     borderRadius: BorderRadius.circular(16),
                   ),
-                  child: Text(
-                    "Phase: $_phaseLabel | Confirm: $_confirmProgress/${SitupDetector.confirmFrames} | Angle: ${_currentAngle.toStringAsFixed(0)}°",
-                    style: TextStyle(fontSize: 11, color: _subtextColor, fontFamily: 'monospace'),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text("Debug: $_debugInfo",
+                          style: TextStyle(fontSize: 11, color: _subtextColor, fontFamily: 'monospace')),
+                      Text("Phase: $_phaseLabel | Confirm: $_confirmProgress/${SitupDetector.confirmFrames}",
+                          style: TextStyle(fontSize: 11, color: _subtextColor, fontFamily: 'monospace')),
+                      Text("Frames analyzed: $_rawAngleSamples",
+                          style: TextStyle(fontSize: 11, color: _subtextColor, fontFamily: 'monospace')),
+                    ],
                   ),
                 ),
+
+              if (_isCameraInitialized) const SizedBox(height: 16),
+
+              // Phone placement guide
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: _cardColor,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.info_outline, size: 18, color: _accentColor),
+                        const SizedBox(width: 8),
+                        Text("Phone Placement", style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: _textColor)),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      "1. Place phone on floor or prop it up on its SIDE\n"
+                      "2. Back camera should see your full body from the side\n"
+                      "3. Make sure your whole body is in the frame\n"
+                      "4. Lie down → sit up → lie back = 1 rep\n"
+                      "5. If AI doesn't count, use the +1 button",
+                      style: TextStyle(fontSize: 12, color: _subtextColor, height: 1.6),
+                    ),
+                  ],
+                ),
+              ),
 
               const SizedBox(height: 12),
             ],
@@ -448,26 +583,38 @@ class _SitupCounterScreenState extends State<SitupCounterScreen> {
     );
   }
 
+  Color _getAngleColor() {
+    if (_currentAngle > SitupDetector.lyingAngle) return const Color(0xFFE8534A);
+    if (_currentAngle < SitupDetector.sittingAngle) return const Color(0xFF4CAF50);
+    return const Color(0xFFFFC107);
+  }
+
+  Widget _buildBadge(String text, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.white.withAlpha(220),
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [BoxShadow(color: Colors.black.withAlpha(15), blurRadius: 8)],
+      ),
+      child: Text(text, style: TextStyle(color: color, fontSize: 14, fontWeight: FontWeight.bold)),
+    );
+  }
+
   Widget _buildStatCard(String value, String label, IconData icon, Color color) {
     return Expanded(
       child: Container(
-        padding: const EdgeInsets.all(14),
+        padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
           color: _cardColor,
           borderRadius: BorderRadius.circular(20),
-          boxShadow: [
-            BoxShadow(
-              color: color.withAlpha(15),
-              blurRadius: 15,
-              offset: const Offset(0, 6),
-            ),
-          ],
+          boxShadow: [BoxShadow(color: color.withAlpha(15), blurRadius: 15, offset: const Offset(0, 6))],
         ),
         child: Column(
           children: [
-            Icon(icon, color: color, size: 20),
-            const SizedBox(height: 8),
-            Text(value, style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: _textColor)),
+            Icon(icon, color: color, size: 18),
+            const SizedBox(height: 6),
+            Text(value, style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: _textColor)),
             const SizedBox(height: 2),
             Text(label, style: TextStyle(fontSize: 11, color: _subtextColor)),
           ],
