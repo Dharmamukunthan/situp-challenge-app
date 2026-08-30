@@ -61,7 +61,7 @@ class _SitupCounterScreenState extends State<SitupCounterScreen> {
 
       setState(() {
         _isCameraInitialized = true;
-        _status = "Camera ready — lie down to start";
+        _status = "Camera ready - lie down to start";
       });
     } catch (e) {
       setState(() => _status = "Camera error: $e");
@@ -113,9 +113,9 @@ class _SitupCounterScreenState extends State<SitupCounterScreen> {
           });
         } else {
           if (angle > SitupDetector.lyingAngle) {
-            setState(() => _status = "LYING — Sit up!");
+            setState(() => _status = "LYING - Sit up!");
           } else if (angle < SitupDetector.sittingAngle) {
-            setState(() => _status = "SITTING — Lie back down!");
+            setState(() => _status = "SITTING - Lie back down!");
           } else {
             setState(() => _status = "Moving...");
           }
@@ -159,7 +159,7 @@ class _SitupCounterScreenState extends State<SitupCounterScreen> {
     _cameraController = null;
     setState(() {
       _isCameraInitialized = false;
-      _status = "Session ended — $_repCount reps";
+      _status = "Session ended - $_repCount reps";
     });
   }
 
@@ -168,7 +168,7 @@ class _SitupCounterScreenState extends State<SitupCounterScreen> {
     setState(() {
       _repCount = 0;
       _currentAngle = 180;
-      _status = "Reset — ready to start";
+      _status = "Reset - ready to start";
       _phaseLabel = "IDLE";
       _confirmProgress = 0;
     });
@@ -204,7 +204,7 @@ class _SitupCounterScreenState extends State<SitupCounterScreen> {
                   height: 300,
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: angleColor.withOpacity(0.5), width: 2),
+                    border: Border.all(color: angleColor.withAlpha(128), width: 2),
                   ),
                   clipBehavior: Clip.antiAlias,
                   child: Stack(
@@ -215,7 +215,7 @@ class _SitupCounterScreenState extends State<SitupCounterScreen> {
                         child: Container(
                           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                           decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(20)),
-                          child: Text("${_currentAngle.toStringAsFixed(0)}°",
+                          child: Text("${_currentAngle.toStringAsFixed(0)} deg",
                               style: TextStyle(color: angleColor, fontSize: 20, fontWeight: FontWeight.bold)),
                         ),
                       ),
@@ -284,7 +284,7 @@ class _SitupCounterScreenState extends State<SitupCounterScreen> {
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(color: const Color(0xFF1A1A2E), borderRadius: BorderRadius.circular(12)),
                   child: Text(
-                    "Phase: $_phaseLabel | Confirm: $_confirmProgress/${SitupDetector.confirmFrames} | Angle: ${_currentAngle.toStringAsFixed(0)}°",
+                    "Phase: $_phaseLabel | Confirm: $_confirmProgress/${SitupDetector.confirmFrames} | Angle: ${_currentAngle.toStringAsFixed(0)}",
                     style: const TextStyle(fontSize: 11, color: Colors.grey, fontFamily: 'monospace'),
                   ),
                 ),
@@ -350,7 +350,7 @@ class _SitupCounterScreenState extends State<SitupCounterScreen> {
                     const Text("Phone Placement", style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white)),
                     const SizedBox(height: 8),
                     Text(
-                      "• Place phone on floor to your SIDE\n• Back camera facing your body\n• Full body visible from the side\n• Lie down → Sit up → Lie back = 1 rep",
+                      "Place phone on floor to your SIDE. Back camera facing your body. Full body visible from the side. Lie down then sit up then lie back = 1 rep.",
                       style: TextStyle(fontSize: 12, color: Colors.grey[400], height: 1.5),
                     ),
                   ],

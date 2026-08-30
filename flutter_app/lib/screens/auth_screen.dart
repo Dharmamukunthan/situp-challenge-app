@@ -11,7 +11,6 @@ class AuthScreen extends StatefulWidget {
 
 class _AuthScreenState extends State<AuthScreen> {
   final _usernameController = TextEditingController();
-  final _emailController = TextEditingController();
   bool _isLoading = false;
   String? _error;
 
@@ -73,7 +72,7 @@ class _AuthScreenState extends State<AuthScreen> {
                 width: 80,
                 height: 80,
                 decoration: BoxDecoration(
-                  color: const Color(0xFF6366F1).withOpacity(0.1),
+                  color: const Color(0xFF6366F1).withAlpha(26),
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: const Icon(Icons.fitness_center, size: 40, color: Color(0xFF6366F1)),

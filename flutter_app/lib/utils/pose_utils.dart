@@ -1,4 +1,5 @@
 import 'dart:math';
+import 'dart:ui';
 
 /// Calculate angle between three points (shoulder-hip-knee)
 /// Returns angle in degrees at the middle point (hip)

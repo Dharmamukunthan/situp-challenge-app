@@ -75,7 +75,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         type: BottomNavigationBarType.fixed,
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.camera_alt), label: "Counter"),
-          BottomNavigationBarItem(icon: Icon(Icons.swords), label: "Battles"),
+          BottomNavigationBarItem(icon: Icon(Icons.flash_on), label: "Battles"),
           BottomNavigationBarItem(icon: Icon(Icons.leaderboard), label: "Leaderboard"),
         ],
       ),
@@ -92,7 +92,7 @@ class _BattlesPlaceholder extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.swords, size: 60, color: Colors.grey[600]),
+          Icon(Icons.flash_on, size: 60, color: Colors.grey[600]),
           const SizedBox(height: 16),
           Text(
             "Head-to-Head Battles",

@@ -131,7 +131,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                                 width: 36,
                                 height: 36,
                                 decoration: BoxDecoration(
-                                  color: _getRankColor(index).withOpacity(0.2),
+                                  color: _getRankColor(index).withAlpha(51),
                                   borderRadius: BorderRadius.circular(18),
                                 ),
                                 child: Center(
