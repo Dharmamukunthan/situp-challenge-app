@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import '../services/convex_service.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
 
 class LeaderboardScreen extends StatefulWidget {
   const LeaderboardScreen({super.key});
@@ -9,163 +10,194 @@ class LeaderboardScreen extends StatefulWidget {
 }
 
 class _LeaderboardScreenState extends State<LeaderboardScreen> {
-  int _selectedTab = 0;
+  bool _isToday = true;
   List<Map<String, dynamic>> _rankings = [];
-  bool _loading = true;
+  bool _isLoading = true;
+
+  static const Color _bgColor = Color(0xFFFDF5F0);
+  static const Color _cardColor = Color(0xFFFFF0E8);
+  static const Color _accentColor = Color(0xFFE8734A);
+  static const Color _textColor = Color(0xFF3D2C2C);
+  static const Color _subtextColor = Color(0xFF9C8A8A);
 
   @override
   void initState() {
     super.initState();
-    _loadLeaderboard();
+    _loadRankings();
   }
 
-  void _loadLeaderboard() async {
-    setState(() => _loading = true);
+  Future<void> _loadRankings() async {
+    setState(() => _isLoading = true);
     try {
-      final data = _selectedTab == 0
-          ? await ConvexService.getLeaderboard()
-          : await ConvexService.getOverallLeaderboard();
-      setState(() { _rankings = data; _loading = false; });
+      final response = await http.get(
+        Uri.parse('https://graceful-mink-900.convex.site/api/query/situpLogs.getLeaderboard?isToday=$_isToday'),
+      );
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        setState(() {
+          _rankings = List<Map<String, dynamic>>.from(data['result'] ?? []);
+          _isLoading = false;
+        });
+      } else {
+        setState(() { _isLoading = false; });
+      }
     } catch (_) {
-      setState(() { _rankings = []; _loading = false; });
+      setState(() { _isLoading = false; });
     }
-  }
-
-  Color _getRankColor(int index) {
-    if (index == 0) return Colors.amber;
-    if (index == 1) return Colors.grey;
-    if (index == 2) return Colors.orange;
-    return Colors.grey[600]!;
   }
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        // Tab buttons
-        Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            children: [
-              Expanded(
-                child: GestureDetector(
-                  onTap: () { setState(() => _selectedTab = 0); _loadLeaderboard(); },
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    decoration: BoxDecoration(
-                      color: _selectedTab == 0 ? const Color(0xFF6366F1) : const Color(0xFF1A1A2E),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Center(
-                      child: Text(
-                        "Today",
-                        style: TextStyle(
-                          color: _selectedTab == 0 ? Colors.white : Colors.grey,
-                          fontWeight: FontWeight.bold,
-                        ),
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Toggle
+          Container(
+            decoration: BoxDecoration(
+              color: _cardColor,
+              borderRadius: BorderRadius.circular(20),
+              boxShadow: [
+                BoxShadow(
+                  color: _accentColor.withAlpha(15),
+                  blurRadius: 15,
+                  offset: const Offset(0, 6),
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () => setState(() { _isToday = true; _loadRankings(); }),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      decoration: BoxDecoration(
+                        color: _isToday ? _accentColor : Colors.transparent,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Center(
+                        child: Text("Today",
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.bold,
+                              color: _isToday ? Colors.white : _subtextColor,
+                            )),
                       ),
                     ),
                   ),
                 ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: GestureDetector(
-                  onTap: () { setState(() => _selectedTab = 1); _loadLeaderboard(); },
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    decoration: BoxDecoration(
-                      color: _selectedTab == 1 ? const Color(0xFF6366F1) : const Color(0xFF1A1A2E),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Center(
-                      child: Text(
-                        "All Time",
-                        style: TextStyle(
-                          color: _selectedTab == 1 ? Colors.white : Colors.grey,
-                          fontWeight: FontWeight.bold,
-                        ),
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () => setState(() { _isToday = false; _loadRankings(); }),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      decoration: BoxDecoration(
+                        color: !_isToday ? _accentColor : Colors.transparent,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Center(
+                        child: Text("All Time",
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.bold,
+                              color: !_isToday ? Colors.white : _subtextColor,
+                            )),
                       ),
                     ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
 
-        // Rankings list
-        Expanded(
-          child: _loading
-              ? const Center(child: CircularProgressIndicator())
-              : _rankings.isEmpty
-                  ? Center(
+          const SizedBox(height: 24),
+
+          Text(_isToday ? "Today's Rankings" : "All Time Rankings",
+              style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: _textColor)),
+
+          const SizedBox(height: 16),
+
+          // Rankings
+          if (_isLoading)
+            Center(
+              child: CircularProgressIndicator(color: _accentColor),
+            )
+          else if (_rankings.isEmpty)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(40),
+              decoration: BoxDecoration(
+                color: _cardColor,
+                borderRadius: BorderRadius.circular(24),
+                boxShadow: [
+                  BoxShadow(
+                    color: _accentColor.withAlpha(15),
+                    blurRadius: 20,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
+              ),
+              child: Column(
+                children: [
+                  Icon(Icons.emoji_events, size: 48, color: _subtextColor),
+                  const SizedBox(height: 16),
+                  Text("No sessions logged today.",
+                      style: TextStyle(fontSize: 16, color: _textColor, fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 4),
+                  Text("Be the first!",
+                      style: TextStyle(fontSize: 14, color: _subtextColor)),
+                ],
+              ),
+            )
+          else
+            ...List.generate(_rankings.length, (index) {
+              final rank = _rankings[index];
+              final medals = ['🥇', '🥈', '🥉'];
+              return Container(
+                margin: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: _cardColor,
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [
+                    BoxShadow(
+                      color: _accentColor.withAlpha(15),
+                      blurRadius: 15,
+                      offset: const Offset(0, 6),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  children: [
+                    Text(
+                      index < 3 ? medals[index] : "${index + 1}",
+                      style: TextStyle(
+                        fontSize: index < 3 ? 24 : 16,
+                        fontWeight: FontWeight.bold,
+                        color: _textColor,
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
                       child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Icon(Icons.leaderboard, size: 50, color: Colors.grey[600]),
-                          const SizedBox(height: 12),
-                          Text(
-                            "No rankings yet.\nBe the first!",
-                            textAlign: TextAlign.center,
-                            style: TextStyle(color: Colors.grey[500]),
-                          ),
+                          Text(rank['username'] ?? 'Unknown',
+                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: _textColor)),
+                          Text("${rank['count'] ?? 0} reps",
+                              style: TextStyle(fontSize: 13, color: _subtextColor)),
                         ],
                       ),
-                    )
-                  : ListView.builder(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      itemCount: _rankings.length,
-                      itemBuilder: (context, index) {
-                        final entry = _rankings[index];
-                        return Container(
-                          margin: const EdgeInsets.only(bottom: 8),
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF1A1A2E),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Row(
-                            children: [
-                              Container(
-                                width: 36,
-                                height: 36,
-                                decoration: BoxDecoration(
-                                  color: _getRankColor(index).withAlpha(51),
-                                  borderRadius: BorderRadius.circular(18),
-                                ),
-                                child: Center(
-                                  child: Text(
-                                    "${index + 1}",
-                                    style: TextStyle(
-                                      color: _getRankColor(index),
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Text(
-                                  entry['userName'] ?? 'Athlete',
-                                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500),
-                                ),
-                              ),
-                              Text(
-                                "${entry['total'] ?? 0}",
-                                style: const TextStyle(
-                                  color: Color(0xFF6366F1),
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 16,
-                                ),
-                              ),
-                            ],
-                          ),
-                        );
-                      },
                     ),
-        ),
-      ],
+                    Icon(Icons.emoji_events, color: _accentColor, size: 20),
+                  ],
+                ),
+              );
+            }),
+        ],
+      ),
     );
   }
 }

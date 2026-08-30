@@ -1,142 +1,149 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'dashboard_screen.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
 
 class AuthScreen extends StatefulWidget {
-  const AuthScreen({super.key});
+  final Function(String username) onAuth;
+
+  const AuthScreen({super.key, required this.onAuth});
 
   @override
   State<AuthScreen> createState() => _AuthScreenState();
 }
 
 class _AuthScreenState extends State<AuthScreen> {
-  final _usernameController = TextEditingController();
+  final _controller = TextEditingController();
   bool _isLoading = false;
   String? _error;
 
-  @override
-  void initState() {
-    super.initState();
-    _checkExistingUser();
-  }
+  static const Color _bgColor = Color(0xFFFDF5F0);
+  static const Color _cardColor = Color(0xFFFFF0E8);
+  static const Color _accentColor = Color(0xFFE8734A);
+  static const Color _textColor = Color(0xFF3D2C2C);
+  static const Color _subtextColor = Color(0xFF9C8A8A);
 
-  void _checkExistingUser() async {
-    final prefs = await SharedPreferences.getInstance();
-    final userId = prefs.getString('user_id');
-    if (userId != null && mounted) {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => const DashboardScreen()),
-      );
-    }
-  }
-
-  void _loginWithUsername() async {
-    if (_usernameController.text.trim().length < 2) {
-      setState(() => _error = "Username must be at least 2 characters");
+  Future<void> _signIn() async {
+    final username = _controller.text.trim();
+    if (username.isEmpty) {
+      setState(() => _error = "Please enter a username");
       return;
     }
 
     setState(() { _isLoading = true; _error = null; });
 
     try {
-      final username = _usernameController.text.trim().toLowerCase();
-      final userId = 'user_${username}_${DateTime.now().millisecondsSinceEpoch}';
+      final response = await http.post(
+        Uri.parse('https://graceful-mink-900.convex.site/api/mutation/users.signInWithUsername'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({'args': {'username': username}}),
+      );
 
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('user_id', userId);
-      await prefs.setString('username', username);
-
-      if (mounted) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (_) => const DashboardScreen()),
-        );
+      if (response.statusCode == 200) {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('situp-username', username);
+        widget.onAuth(username);
+      } else {
+        setState(() { _error = "Failed to sign in"; _isLoading = false; });
       }
-    } catch (e) {
-      setState(() { _error = e.toString(); _isLoading = false; });
+    } catch (_) {
+      setState(() { _error = "Network error"; _isLoading = false; });
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: SafeArea(
+      backgroundColor: _bgColor,
+      body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              const SizedBox(height: 60),
-              Container(
-                width: 80,
-                height: 80,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF6366F1).withAlpha(26),
-                  borderRadius: BorderRadius.circular(20),
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(32),
+            decoration: BoxDecoration(
+              color: _cardColor,
+              borderRadius: BorderRadius.circular(28),
+              boxShadow: [
+                BoxShadow(
+                  color: _accentColor.withAlpha(20),
+                  blurRadius: 30,
+                  offset: const Offset(0, 12),
                 ),
-                child: const Icon(Icons.fitness_center, size: 40, color: Color(0xFF6366F1)),
-              ),
-              const SizedBox(height: 20),
-              const Text(
-                "Situp Challenge",
-                style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Colors.white),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                "Count situps with AI camera tracking",
-                style: TextStyle(fontSize: 14, color: Colors.grey[400]),
-              ),
-              const SizedBox(height: 50),
-
-              // Username login
-              TextField(
-                controller: _usernameController,
-                style: const TextStyle(color: Colors.white),
-                decoration: InputDecoration(
-                  labelText: "Username",
-                  labelStyle: TextStyle(color: Colors.grey[400]),
-                  filled: true,
-                  fillColor: const Color(0xFF1A1A2E),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide.none,
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Logo
+                Container(
+                  padding: const EdgeInsets.all(18),
+                  decoration: BoxDecoration(
+                    color: _accentColor.withAlpha(30),
+                    shape: BoxShape.circle,
                   ),
-                  prefixIcon: const Icon(Icons.person, color: Colors.grey),
+                  child: Icon(Icons.shield, color: _accentColor, size: 36),
                 ),
-              ),
-              const SizedBox(height: 16),
 
-              SizedBox(
-                width: double.infinity,
-                height: 55,
-                child: ElevatedButton(
-                  onPressed: _isLoading ? null : _loginWithUsername,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF6366F1),
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                const SizedBox(height: 24),
+
+                Text("Situp Challenge",
+                    style: TextStyle(fontSize: 28, fontWeight: FontWeight.w900, color: _textColor)),
+
+                const SizedBox(height: 8),
+
+                Text("Count situps with precision.",
+                    style: TextStyle(fontSize: 16, color: _subtextColor)),
+
+                const SizedBox(height: 32),
+
+                // Username input
+                TextField(
+                  controller: _controller,
+                  decoration: InputDecoration(
+                    hintText: "Enter username",
+                    hintStyle: TextStyle(color: _subtextColor),
+                    filled: true,
+                    fillColor: Colors.white,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      borderSide: BorderSide.none,
+                    ),
+                    prefixIcon: Icon(Icons.person, color: _accentColor),
                   ),
-                  child: _isLoading
-                      ? const CircularProgressIndicator(color: Colors.white)
-                      : const Text("Play with Username", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                ),
-              ),
-
-              if (_error != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 16),
-                  child: Text(_error!, style: const TextStyle(color: Colors.red, fontSize: 12)),
+                  style: TextStyle(color: _textColor, fontSize: 16),
+                  onSubmitted: (_) => _signIn(),
                 ),
 
-              const SizedBox(height: 30),
+                if (_error != null) ...[
+                  const SizedBox(height: 12),
+                  Text(_error!, style: TextStyle(color: Colors.red, fontSize: 14)),
+                ],
 
-              Text(
-                "No account needed. Just pick a username and start!",
-                style: TextStyle(fontSize: 12, color: Colors.grey[500]),
-                textAlign: TextAlign.center,
-              ),
-            ],
+                const SizedBox(height: 24),
+
+                // Sign in button
+                SizedBox(
+                  width: double.infinity, height: 56,
+                  child: ElevatedButton(
+                    onPressed: _isLoading ? null : _signIn,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _accentColor,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                      elevation: 0,
+                    ),
+                    child: _isLoading
+                        ? const SizedBox(
+                            width: 24, height: 24,
+                            child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                          )
+                        : const Text("Get Started",
+                            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),

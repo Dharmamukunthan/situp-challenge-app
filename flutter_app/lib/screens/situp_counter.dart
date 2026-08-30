@@ -19,9 +19,16 @@ class _SitupCounterScreenState extends State<SitupCounterScreen> {
   bool _isProcessing = false;
   double _currentAngle = 180;
   int _repCount = 0;
-  String _status = "Tap Start to begin";
+  String _status = "Start counting";
   String _phaseLabel = "IDLE";
   int _confirmProgress = 0;
+
+  // Claymorphism colors
+  static const Color _bgColor = Color(0xFFFDF5F0);
+  static const Color _cardColor = Color(0xFFFFF0E8);
+  static const Color _accentColor = Color(0xFFE8734A);
+  static const Color _textColor = Color(0xFF3D2C2C);
+  static const Color _subtextColor = Color(0xFF9C8A8A);
 
   @override
   void initState() {
@@ -182,91 +189,188 @@ class _SitupCounterScreenState extends State<SitupCounterScreen> {
   @override
   Widget build(BuildContext context) {
     final angleColor = _currentAngle > SitupDetector.lyingAngle
-        ? Colors.red
+        ? _accentColor
         : _currentAngle < SitupDetector.sittingAngle
-            ? Colors.green
-            : Colors.amber;
+            ? const Color(0xFF4CAF50)
+            : _accentColor;
 
     return Scaffold(
+      backgroundColor: _bgColor,
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(16),
           child: Column(
             children: [
-              const Text("Situp Challenge",
-                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white)),
-              const SizedBox(height: 20),
+              // Stats row
+              Row(
+                children: [
+                  _buildStatCard("$_repCount", "Reps", Icons.local_fire_department, _accentColor),
+                  const SizedBox(width: 10),
+                  _buildStatCard(_situpDetector.repCount > 0 ? "${_situpDetector.repCount}" : "0", "Session", Icons.trending_up, const Color(0xFF4CAF50)),
+                  const SizedBox(width: 10),
+                  _buildStatCard("${(_repCount / 100 * 100).toInt().clamp(0, 100)}%", "Goal", Icons.track_changes, _accentColor),
+                ],
+              ),
 
-              if (_isCameraInitialized && _cameraController != null)
-                Container(
-                  height: 300,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: angleColor.withAlpha(128), width: 2),
-                  ),
-                  clipBehavior: Clip.antiAlias,
-                  child: Stack(
-                    children: [
-                      CameraPreview(_cameraController!),
-                      Positioned(
-                        top: 10, left: 10,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                          decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(20)),
-                          child: Text("${_currentAngle.toStringAsFixed(0)} deg",
-                              style: TextStyle(color: angleColor, fontSize: 20, fontWeight: FontWeight.bold)),
-                        ),
-                      ),
-                      Positioned(
-                        top: 10, right: 10,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                          decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(20)),
-                          child: Text("$_repCount reps",
-                              style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
-                        ),
-                      ),
-                      Positioned(
-                        bottom: 10, left: 0, right: 0,
-                        child: Center(
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                            decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(20)),
-                            child: Text(_status, style: TextStyle(color: angleColor, fontSize: 14, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 16),
+
+              // Camera card
+              Container(
+                width: double.infinity,
+                height: _isCameraInitialized ? 280 : 200,
+                decoration: BoxDecoration(
+                  color: _cardColor,
+                  borderRadius: BorderRadius.circular(24),
+                  boxShadow: [
+                    BoxShadow(
+                      color: _accentColor.withAlpha(20),
+                      blurRadius: 20,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: _isCameraInitialized && _cameraController != null
+                    ? Stack(
+                        children: [
+                          CameraPreview(_cameraController!),
+                          Positioned(
+                            top: 12, left: 12,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withAlpha(200),
+                                borderRadius: BorderRadius.circular(20),
+                                boxShadow: [
+                                  BoxShadow(color: Colors.black.withAlpha(15), blurRadius: 10),
+                                ],
+                              ),
+                              child: Text("⚡ $_repCount reps",
+                                  style: TextStyle(color: _accentColor, fontSize: 14, fontWeight: FontWeight.bold)),
+                            ),
                           ),
-                        ),
+                          Positioned(
+                            top: 12, right: 12,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withAlpha(200),
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: Text("${_currentAngle.toStringAsFixed(0)}°",
+                                  style: TextStyle(color: _textColor, fontSize: 14, fontWeight: FontWeight.bold)),
+                            ),
+                          ),
+                          Positioned(
+                            bottom: 12, left: 0, right: 0,
+                            child: Center(
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withAlpha(200),
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: Text(_status,
+                                    style: TextStyle(color: angleColor, fontSize: 13, fontWeight: FontWeight.w600)),
+                              ),
+                            ),
+                          ),
+                        ],
+                      )
+                    : Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.videocam_off, size: 48, color: _subtextColor),
+                          const SizedBox(height: 12),
+                          Text("Camera is off", style: TextStyle(color: _subtextColor, fontSize: 16)),
+                        ],
                       ),
-                    ],
-                  ),
-                ),
+              ),
 
-              if (!_isCameraInitialized)
-                Container(
-                  height: 200,
-                  decoration: BoxDecoration(color: const Color(0xFF1A1A2E), borderRadius: BorderRadius.circular(20)),
-                  child: const Center(child: Icon(Icons.camera_alt, size: 60, color: Colors.grey)),
-                ),
+              const SizedBox(height: 16),
 
-              const SizedBox(height: 20),
-
+              // Rep counter card
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(24),
-                decoration: BoxDecoration(color: const Color(0xFF1A1A2E), borderRadius: BorderRadius.circular(20)),
+                decoration: BoxDecoration(
+                  color: _cardColor,
+                  borderRadius: BorderRadius.circular(24),
+                  boxShadow: [
+                    BoxShadow(
+                      color: _accentColor.withAlpha(20),
+                      blurRadius: 20,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
+                ),
                 child: Column(
                   children: [
-                    const Text("REPS COMPLETED", style: TextStyle(fontSize: 12, color: Colors.grey, letterSpacing: 2)),
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: _accentColor.withAlpha(30),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(Icons.emoji_events, size: 40, color: _accentColor),
+                    ),
+                    const SizedBox(height: 16),
+                    Text("$_repCount reps", style: TextStyle(fontSize: 36, fontWeight: FontWeight.w900, color: _textColor)),
+                    const SizedBox(height: 4),
+                    Text(_status, style: TextStyle(fontSize: 14, color: _subtextColor)),
                     const SizedBox(height: 8),
-                    Text("$_repCount", style: const TextStyle(fontSize: 72, fontWeight: FontWeight.w900, color: Colors.white)),
-                    const SizedBox(height: 8),
-                    Text("of 100 daily goal", style: TextStyle(fontSize: 14, color: Colors.grey[400])),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text("Goal: 100", style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: _subtextColor)),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 16),
+
+              // Daily goal progress
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: _cardColor,
+                  borderRadius: BorderRadius.circular(24),
+                  boxShadow: [
+                    BoxShadow(
+                      color: _accentColor.withAlpha(20),
+                      blurRadius: 20,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(Icons.emoji_events, size: 20, color: _accentColor),
+                            const SizedBox(width: 8),
+                            Text("Daily Goal", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: _textColor)),
+                          ],
+                        ),
+                        Text("$_repCount/100", style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: _textColor)),
+                      ],
+                    ),
                     const SizedBox(height: 12),
                     ClipRRect(
                       borderRadius: BorderRadius.circular(8),
                       child: LinearProgressIndicator(
                         value: (_repCount / 100).clamp(0.0, 1.0),
-                        backgroundColor: const Color(0xFF2A2A3E),
-                        valueColor: AlwaysStoppedAnimation(_repCount >= 100 ? Colors.green : const Color(0xFF6366F1)),
+                        backgroundColor: Colors.white,
+                        valueColor: AlwaysStoppedAnimation(_repCount >= 100 ? const Color(0xFF4CAF50) : _accentColor),
                         minHeight: 8,
                       ),
                     ),
@@ -276,86 +380,97 @@ class _SitupCounterScreenState extends State<SitupCounterScreen> {
 
               const SizedBox(height: 16),
 
+              // Start/End buttons
+              Row(
+                children: [
+                  Expanded(
+                    child: SizedBox(
+                      height: 56,
+                      child: ElevatedButton(
+                        onPressed: _isCameraInitialized ? _endSession : _startSession,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: _accentColor,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                          elevation: 0,
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(_isCameraInitialized ? Icons.stop : Icons.camera_alt, size: 20),
+                            const SizedBox(width: 8),
+                            Text(_isCameraInitialized ? "End Session" : "Start Session",
+                                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  SizedBox(
+                    height: 56, width: 56,
+                    child: ElevatedButton(
+                      onPressed: _resetSession,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.white,
+                        foregroundColor: _textColor,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                        elevation: 0,
+                      ),
+                      child: const Icon(Icons.refresh, size: 22),
+                    ),
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 16),
+
+              // Debug info
               if (_isCameraInitialized)
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(color: const Color(0xFF1A1A2E), borderRadius: BorderRadius.circular(12)),
+                  decoration: BoxDecoration(
+                    color: _cardColor,
+                    borderRadius: BorderRadius.circular(16),
+                  ),
                   child: Text(
-                    "Phase: $_phaseLabel | Confirm: $_confirmProgress/${SitupDetector.confirmFrames} | Angle: ${_currentAngle.toStringAsFixed(0)}",
-                    style: const TextStyle(fontSize: 11, color: Colors.grey, fontFamily: 'monospace'),
+                    "Phase: $_phaseLabel | Confirm: $_confirmProgress/${SitupDetector.confirmFrames} | Angle: ${_currentAngle.toStringAsFixed(0)}°",
+                    style: TextStyle(fontSize: 11, color: _subtextColor, fontFamily: 'monospace'),
                   ),
-                ),
-
-              const SizedBox(height: 16),
-
-              if (!_isCameraInitialized)
-                SizedBox(
-                  width: double.infinity, height: 60,
-                  child: ElevatedButton(
-                    onPressed: _startSession,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF6366F1),
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                    ),
-                    child: const Text("Start AI Counting", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                  ),
-                ),
-
-              if (_isCameraInitialized)
-                Row(
-                  children: [
-                    Expanded(
-                      child: SizedBox(
-                        height: 55,
-                        child: ElevatedButton(
-                          onPressed: _endSession,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF2A2A3E), foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                          ),
-                          child: const Text("End Session"),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: SizedBox(
-                        height: 55,
-                        child: ElevatedButton(
-                          onPressed: _resetSession,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF2A2A3E), foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                          ),
-                          child: const Text("Reset"),
-                        ),
-                      ),
-                    ),
-                  ],
                 ),
 
               const SizedBox(height: 12),
-
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(color: const Color(0xFF1A1A2E), borderRadius: BorderRadius.circular(12)),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text("Phone Placement", style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white)),
-                    const SizedBox(height: 8),
-                    Text(
-                      "Place phone on floor to your SIDE. Back camera facing your body. Full body visible from the side. Lie down then sit up then lie back = 1 rep.",
-                      style: TextStyle(fontSize: 12, color: Colors.grey[400], height: 1.5),
-                    ),
-                  ],
-                ),
-              ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatCard(String value, String label, IconData icon, Color color) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: _cardColor,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: color.withAlpha(15),
+              blurRadius: 15,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        child: Column(
+          children: [
+            Icon(icon, color: color, size: 20),
+            const SizedBox(height: 8),
+            Text(value, style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: _textColor)),
+            const SizedBox(height: 2),
+            Text(label, style: TextStyle(fontSize: 11, color: _subtextColor)),
+          ],
         ),
       ),
     );
