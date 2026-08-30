@@ -94,8 +94,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
       }
 
       try {
-        final response = await http.get(
+        final response = await http.post(
           Uri.parse('https://graceful-mink-900.convex.site/api/query'),
+          headers: {'Content-Type': 'application/json'},
+          body: json.encode({
+            'path': 'battles:getBattle',
+            'args': {'battleId': battleId},
+          }),
         );
 
         if (response.statusCode == 200) {
