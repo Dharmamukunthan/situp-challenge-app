@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import 'dart:async';
 import 'package:http/http.dart' as http;
@@ -30,7 +29,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
   int _battleOpponentReps = 0;
   Timer? _battleTimer;
   Timer? _pollTimer;
-  CameraCounterForBattle? _battleCounter;
 
   static const Color _bgColor = Color(0xFFFDF5F0);
   static const Color _cardColor = Color(0xFFFFF0E8);
@@ -467,7 +465,3 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 }
 
-// Placeholder class for battle camera integration
-class CameraCounterForBattle {
-  int reps = 0;
-}

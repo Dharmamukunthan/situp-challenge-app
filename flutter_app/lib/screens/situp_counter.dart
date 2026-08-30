@@ -24,7 +24,6 @@ class _SitupCounterScreenState extends State<SitupCounterScreen> {
   String _status = "Tap Start to begin";
   String _phaseLabel = "IDLE";
   int _confirmProgress = 0;
-  bool _showSkeleton = false;
   int _rawAngleSamples = 0;
   String _debugInfo = "";
 
