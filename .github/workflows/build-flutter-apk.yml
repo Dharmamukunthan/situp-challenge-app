@@ -11,14 +11,20 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Setup Java JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "17"
+
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           flutter-version: "3.24.0"
           channel: stable
 
-      - name: Navigate to Flutter app
-        run: cd flutter_app
+      - name: Flutter doctor
+        run: flutter doctor -v
 
       - name: Get dependencies
         working-directory: flutter_app

@@ -13,7 +13,6 @@ dependencies:
   google_mlkit_pose_detection: ^0.13.0
   permission_handler: ^11.3.0
   shared_preferences: ^2.3.0
-  intl: ^0.19.0
   vibration: ^1.8.4
 
 dev_dependencies:
