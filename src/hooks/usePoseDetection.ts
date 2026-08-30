@@ -3,28 +3,42 @@ import "@tensorflow/tfjs-backend-webgl";
 import * as poseDetection from "@tensorflow-models/pose-detection";
 
 /**
- * Situp counter using TensorFlow.js MoveNet pose detection.
+ * Situp counter using TensorFlow.js MoveNet.
  *
- * FRONT CAMERA geometry (user facing the camera):
- * - Lying down: shoulders are close to hips in screen Y (body foreshortened)
- * - Sitting up: shoulders are far above hips in screen Y (body extended vertically)
+ * CRITICAL: Phone must be placed to the SIDE of the user (profile view).
+ * Front view cannot track situp motion because the body moves toward/away
+ * from the camera (Z-axis) which is invisible in 2D.
  *
- * We track the shoulder-hip vertical DISTANCE as % of frame height.
- * A calibration step sets the personal lying/sitting baselines.
+ * Side view geometry:
+ * - Lying down: Shoulder-Hip-Knee angle ≈ 160-180° (body flat)
+ * - Sitting up: Shoulder-Hip-Knee angle ≈ 40-80° (body folded)
+ *
+ * One rep = angle goes from flat → folded → flat
  */
 
-const SMOOTH_WINDOW = 6;
-const POSE_SCORE_THRESHOLD = 0.25;
+const SMOOTH_WINDOW = 5;
+const POSE_SCORE_THRESHOLD = 0.2;
 
-// Default thresholds (calibration overrides these)
-const DEFAULT_LYING_RATIO = 0.15; // shoulder-hip distance when lying < 15% of frame height
-const DEFAULT_SITTING_RATIO = 0.30; // shoulder-hip distance when sitting > 30% of frame height
-
-interface CalibrationData {
-  lyingRatio: number;
-  sittingRatio: number;
-  done: boolean;
+// Calculate angle between three points (in degrees)
+function calcAngle(
+  a: { x: number; y: number },
+  b: { x: number; y: number },
+  c: { x: number; y: number }
+): number {
+  // Angle at point b, between lines b→a and b→c
+  const ba = { x: a.x - b.x, y: a.y - b.y };
+  const bc = { x: c.x - b.x, y: c.y - b.y };
+  const dot = ba.x * bc.x + ba.y * bc.y;
+  const magBA = Math.sqrt(ba.x * ba.x + ba.y * ba.y);
+  const magBC = Math.sqrt(bc.x * bc.x + bc.y * bc.y);
+  if (magBA === 0 || magBC === 0) return 180;
+  const cosAngle = Math.max(-1, Math.min(1, dot / (magBA * magBC)));
+  return (Math.acos(cosAngle) * 180) / Math.PI;
 }
+
+// Default thresholds
+const LYING_ANGLE = 150; // body flat when angle > 150°
+const SITTING_ANGLE = 80; // body folded when angle < 80°
 
 export function usePoseDetection(
   videoRef: React.RefObject<HTMLVideoElement | null>,
@@ -33,17 +47,9 @@ export function usePoseDetection(
 ) {
   const [repCount, setRepCount] = useState(0);
   const [isInUpPhase, setIsInUpPhase] = useState(false);
-  const [currentAngle, setCurrentAngle] = useState(0);
+  const [currentAngle, setCurrentAngle] = useState(180);
   const [error, setError] = useState<string | null>(null);
   const [modelLoaded, setModelLoaded] = useState(false);
-  const [calibration, setCalibration] = useState<CalibrationData>({
-    lyingRatio: DEFAULT_LYING_RATIO,
-    sittingRatio: DEFAULT_SITTING_RATIO,
-    done: false,
-  });
-  const [calibrationPhase, setCalibrationPhase] = useState<
-    "none" | "lying" | "sitting"
-  >("none");
 
   const animFrameRef = useRef<number>(0);
   const streamRef = useRef<MediaStream | null>(null);
@@ -52,23 +58,28 @@ export function usePoseDetection(
   const detectorRef = useRef<poseDetection.PoseDetector | null>(null);
   const isInUpRef = useRef(false);
   const angleHistoryRef = useRef<number[]>([]);
-  const lyingSamplesRef = useRef<number[]>([]);
-  const sittingSamplesRef = useRef<number[]>([]);
-  const calibrationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Store calibration in a ref so the detection loop always reads the latest
-  const calibrationRef = useRef(calibration);
-  calibrationRef.current = calibration;
 
   const startCamera = useCallback(async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: "user",
-          width: { ideal: 640 },
-          height: { ideal: 480 },
-        },
-      });
+      // Try back camera first (for side profile), fall back to front
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: { ideal: "environment" },
+            width: { ideal: 640 },
+            height: { ideal: 480 },
+          },
+        });
+      } catch {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: "user",
+            width: { ideal: 640 },
+            height: { ideal: 480 },
+          },
+        });
+      }
       streamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
@@ -77,14 +88,12 @@ export function usePoseDetection(
       setError(null);
     } catch (err) {
       const name = (err as Error).name;
-      if (name === "NotAllowedError" || name === "PermissionDeniedError") {
-        setError(
-          "Camera permission denied. Allow camera in browser settings and reload."
-        );
+      if (name === "NotAllowedError") {
+        setError("Camera permission denied. Allow camera in settings and reload.");
       } else if (name === "NotFoundError") {
-        setError("No camera found on this device.");
+        setError("No camera found.");
       } else {
-        setError("Could not access camera: " + (err as Error).message);
+        setError("Camera error: " + (err as Error).message);
       }
     }
   }, [videoRef]);
@@ -94,9 +103,7 @@ export function usePoseDetection(
       streamRef.current.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
     }
-    if (animFrameRef.current) {
-      cancelAnimationFrame(animFrameRef.current);
-    }
+    if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
     if (detectorRef.current) {
       detectorRef.current.dispose();
       detectorRef.current = null;
@@ -110,53 +117,20 @@ export function usePoseDetection(
       const tf = await import("@tensorflow/tfjs-core");
       await tf.setBackend("webgl");
       await tf.ready();
-
       const detector = await poseDetection.createDetector(
         poseDetection.SupportedModels.MoveNet,
-        {
-          modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING,
-        }
+        { modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING }
       );
       detectorRef.current = detector;
       setModelLoaded(true);
       return detector;
     } catch (err) {
-      console.error("Failed to init pose detector:", err);
-      setError("Failed to load AI model. Check your internet connection.");
+      console.error("Pose detector init failed:", err);
+      setError("Failed to load AI model. Check internet connection.");
       return null;
     }
   }, []);
 
-  // Get shoulder-hip vertical distance ratio
-  const getShoulderHipRatio = useCallback(
-    (
-      keypoints: poseDetection.Keypoint[],
-      frameHeight: number
-    ): number | null => {
-      const ls = keypoints.find((k) => k.name === "left_shoulder");
-      const rs = keypoints.find((k) => k.name === "right_shoulder");
-      const lh = keypoints.find((k) => k.name === "left_hip");
-      const rh = keypoints.find((k) => k.name === "right_hip");
-
-      if (
-        !ls || !rs || !lh || !rh ||
-        (ls.score ?? 0) < POSE_SCORE_THRESHOLD ||
-        (rs.score ?? 0) < POSE_SCORE_THRESHOLD ||
-        (lh.score ?? 0) < POSE_SCORE_THRESHOLD ||
-        (rh.score ?? 0) < POSE_SCORE_THRESHOLD
-      ) {
-        return null;
-      }
-
-      const shoulderY = (ls.y + rs.y) / 2;
-      const hipY = (lh.y + rh.y) / 2;
-      const distance = Math.abs(shoulderY - hipY);
-      return distance / frameHeight; // ratio 0..1
-    },
-    []
-  );
-
-  // Core detection loop — reads from video, runs model, counts reps
   const detectPose = useCallback(async () => {
     const video = videoRef.current;
     const canvas = canvasRef.current;
@@ -167,77 +141,123 @@ export function usePoseDetection(
       const poses = await detectorRef.current.estimatePoses(video);
       if (poses.length === 0) return;
 
-      const keypoints = poses[0].keypoints;
-      const frameHeight = video.videoHeight;
-      const frameWidth = video.videoWidth;
+      const kps = poses[0].keypoints;
+      const kpMap = new Map(kps.map((k) => [k.name, k]));
 
-      const ratio = getShoulderHipRatio(keypoints, frameHeight);
-      if (ratio === null) return;
+      const ls = kpMap.get("left_shoulder");
+      const rs = kpMap.get("right_shoulder");
+      const lh = kpMap.get("left_hip");
+      const rh = kpMap.get("right_hip");
+      const lk = kpMap.get("left_knee");
+      const rk = kpMap.get("right_knee");
 
-      // Smooth the ratio
+      // Get best visible side (use whichever side has higher scores)
+      const leftScore =
+        (ls?.score ?? 0) + (lh?.score ?? 0) + (lk?.score ?? 0);
+      const rightScore =
+        (rs?.score ?? 0) + (rh?.score ?? 0) + (rk?.score ?? 0);
+
+      let shoulder: { x: number; y: number } | null = null;
+      let hip: { x: number; y: number } | null = null;
+      let knee: { x: number; y: number } | null = null;
+
+      if (leftScore >= rightScore) {
+        if (
+          ls && lh && lk &&
+          (ls.score ?? 0) > POSE_SCORE_THRESHOLD &&
+          (lh.score ?? 0) > POSE_SCORE_THRESHOLD &&
+          (lk.score ?? 0) > POSE_SCORE_THRESHOLD
+        ) {
+          shoulder = ls;
+          hip = lh;
+          knee = lk;
+        }
+      } else {
+        if (
+          rs && rh && rk &&
+          (rs.score ?? 0) > POSE_SCORE_THRESHOLD &&
+          (rh.score ?? 0) > POSE_SCORE_THRESHOLD &&
+          (rk.score ?? 0) > POSE_SCORE_THRESHOLD
+        ) {
+          shoulder = rs;
+          hip = rh;
+          knee = rk;
+        }
+      }
+
+      // Fallback: use averages of left and right
+      if (!shoulder || !hip || !knee) {
+        if (ls && rs && lh && rh && lk && rk) {
+          const avgScore =
+            ((ls.score ?? 0) + (rs.score ?? 0) +
+              (lh.score ?? 0) + (rh.score ?? 0) +
+              (lk.score ?? 0) + (rk.score ?? 0)) / 6;
+          if (avgScore > POSE_SCORE_THRESHOLD) {
+            shoulder = { x: (ls.x + rs.x) / 2, y: (ls.y + rs.y) / 2 };
+            hip = { x: (lh.x + rh.x) / 2, y: (lh.y + rh.y) / 2 };
+            knee = { x: (lk.x + rk.x) / 2, y: (lk.y + rk.y) / 2 };
+          }
+        }
+      }
+
+      if (!shoulder || !hip || !knee) return;
+
+      // Calculate Shoulder-Hip-Knee angle
+      const rawAngle = calcAngle(shoulder, hip, knee);
+
+      // Smooth
       const history = angleHistoryRef.current;
-      history.push(ratio);
+      history.push(rawAngle);
       if (history.length > SMOOTH_WINDOW) history.shift();
-      const smoothed =
-        history.reduce((a, b) => a + b, 0) / history.length;
+      const smoothed = history.reduce((a, b) => a + b, 0) / history.length;
 
-      // Display as angle-like value for the UI (0-100 scale)
-      setCurrentAngle(Math.round(smoothed * 200));
-
-      // Calibration data collection
-      if (calibrationPhase === "lying") {
-        lyingSamplesRef.current.push(smoothed);
-        if (lyingSamplesRef.current.length >= 30) {
-          const avg =
-            lyingSamplesRef.current.reduce((a, b) => a + b, 0) /
-            lyingSamplesRef.current.length;
-          setCalibration((prev) => ({ ...prev, lyingRatio: avg }));
-          setCalibrationPhase("none");
-          lyingSamplesRef.current = [];
-        }
-        return; // Don't count reps during calibration
-      }
-      if (calibrationPhase === "sitting") {
-        sittingSamplesRef.current.push(smoothed);
-        if (sittingSamplesRef.current.length >= 30) {
-          const avg =
-            sittingSamplesRef.current.reduce((a, b) => a + b, 0) /
-            sittingSamplesRef.current.length;
-          setCalibration((prev) => ({
-            ...prev,
-            sittingRatio: avg,
-            done: true,
-          }));
-          setCalibrationPhase("none");
-          sittingSamplesRef.current = [];
-        }
-        return; // Don't count reps during calibration
-      }
+      setCurrentAngle(Math.round(smoothed));
 
       // Draw skeleton on canvas
       const ctx = canvas.getContext("2d");
       if (ctx) {
-        canvas.width = frameWidth;
-        canvas.height = frameHeight;
-        ctx.clearRect(0, 0, frameWidth, frameHeight);
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
 
         ctx.save();
         ctx.scale(-1, 1);
-        ctx.translate(-frameWidth, 0);
+        ctx.translate(-canvas.width, 0);
 
-        // Draw body connections
+        // Draw body lines
+        const drawLine = (
+          a: { x: number; y: number },
+          b: { x: number; y: number },
+          color: string
+        ) => {
+          ctx.beginPath();
+          ctx.moveTo(a.x, a.y);
+          ctx.lineTo(b.x, b.y);
+          ctx.strokeStyle = color;
+          ctx.lineWidth = 3;
+          ctx.stroke();
+        };
+
+        const bodyColor =
+          smoothed > LYING_ANGLE
+            ? "#ef4444"
+            : smoothed < SITTING_ANGLE
+              ? "#22c55e"
+              : "#f59e0b";
+
+        // Shoulder→Hip→Knee (the critical chain)
+        drawLine(shoulder, hip, bodyColor);
+        drawLine(hip, knee, bodyColor);
+
+        // Draw all detected connections
         const connections: [string, string][] = [
           ["left_shoulder", "right_shoulder"],
-          ["left_shoulder", "left_hip"],
-          ["right_shoulder", "right_hip"],
-          ["left_hip", "right_hip"],
           ["left_shoulder", "left_elbow"],
           ["right_shoulder", "right_elbow"],
           ["left_elbow", "left_wrist"],
           ["right_elbow", "right_wrist"],
+          ["left_hip", "right_hip"],
         ];
-
-        const kpMap = new Map(keypoints.map((k) => [k.name, k]));
 
         for (const [a, b] of connections) {
           const ka = kpMap.get(a);
@@ -247,89 +267,78 @@ export function usePoseDetection(
             (ka.score ?? 0) > POSE_SCORE_THRESHOLD &&
             (kb.score ?? 0) > POSE_SCORE_THRESHOLD
           ) {
-            ctx.beginPath();
-            ctx.moveTo(ka.x, ka.y);
-            ctx.lineTo(kb.x, kb.y);
-            ctx.strokeStyle = "rgba(59, 130, 246, 0.8)";
-            ctx.lineWidth = 2;
-            ctx.stroke();
+            drawLine(ka, kb, "rgba(59, 130, 246, 0.5)");
           }
         }
 
         // Draw keypoints
-        for (const kp of keypoints) {
+        for (const kp of kps) {
           if ((kp.score ?? 0) > POSE_SCORE_THRESHOLD) {
+            const isKey =
+              kp.name?.includes("shoulder") ||
+              kp.name?.includes("hip") ||
+              kp.name?.includes("knee");
             ctx.beginPath();
-            ctx.arc(kp.x, kp.y, 5, 0, 2 * Math.PI);
-            ctx.fillStyle =
-              kp.name?.includes("shoulder") || kp.name?.includes("hip")
-                ? "#22c55e"
-                : "#3b82f6";
+            ctx.arc(kp.x, kp.y, isKey ? 6 : 3, 0, 2 * Math.PI);
+            ctx.fillStyle = isKey ? "#22c55e" : "#3b82f6";
             ctx.fill();
-            ctx.strokeStyle = "#ffffff";
-            ctx.lineWidth = 1;
-            ctx.stroke();
           }
         }
 
-        // Draw ratio label
-        ctx.font = "bold 18px sans-serif";
+        // Draw angle at hip
+        ctx.font = "bold 20px sans-serif";
         ctx.fillStyle = "#ffffff";
         ctx.strokeStyle = "#000000";
         ctx.lineWidth = 3;
-        const label = `Ratio: ${(smoothed * 100).toFixed(0)}%`;
-        ctx.strokeText(label, 15, 30);
-        ctx.fillText(label, 15, 30);
+        const label = `${Math.round(smoothed)}°`;
+        ctx.strokeText(label, hip.x + 15, hip.y - 15);
+        ctx.fillText(label, hip.x + 15, hip.y - 15);
 
-        const cal = calibrationRef.current;
+        // Status text
         ctx.font = "14px sans-serif";
-        ctx.fillText(
-          `Lying: <${(cal.lyingRatio * 100).toFixed(0)}%  Sitting: >${(cal.sittingRatio * 100).toFixed(0)}%`,
-          15,
-          55
-        );
+        const status =
+          smoothed > LYING_ANGLE
+            ? "LYING — Sit up!"
+            : smoothed < SITTING_ANGLE
+              ? "SITTING — Lie back down!"
+              : "MOVING...";
+        ctx.fillStyle =
+          smoothed > LYING_ANGLE
+            ? "#ef4444"
+            : smoothed < SITTING_ANGLE
+              ? "#22c55e"
+              : "#f59e0b";
+        ctx.fillText(status, 15, 30);
 
         ctx.restore();
       }
 
-      // Rep counting using calibrated thresholds
-      const cal = calibrationRef.current;
-      const lyingThreshold = cal.done
-        ? (cal.lyingRatio + cal.sittingRatio) / 2
-        : DEFAULT_LYING_RATIO + (DEFAULT_SITTING_RATIO - DEFAULT_LYING_RATIO) / 2;
-      const lowThreshold = cal.done ? cal.lyingRatio : DEFAULT_LYING_RATIO;
-      const highThreshold = cal.done ? cal.sittingRatio : DEFAULT_SITTING_RATIO;
-
-      if (cooldownRef.current > 0) {
-        cooldownRef.current--;
-      }
+      // Rep counting
+      if (cooldownRef.current > 0) cooldownRef.current--;
 
       if (!isInUpRef.current) {
-        // Lying down — waiting for user to sit up
-        // Ratio increases as user sits up (shoulders move away from hips in screen Y)
-        if (smoothed > highThreshold) {
+        // Waiting for sit-up (angle decreases)
+        if (smoothed < SITTING_ANGLE) {
           isInUpRef.current = true;
           setIsInUpPhase(true);
         }
       } else {
-        // Sitting up — waiting for user to lie back down
-        if (smoothed < lowThreshold) {
-          // Full situp completed!
+        // Waiting for lie-down (angle increases back)
+        if (smoothed > LYING_ANGLE) {
           if (cooldownRef.current === 0) {
             repCountRef.current += 1;
             setRepCount(repCountRef.current);
-            cooldownRef.current = 45; // ~0.75s cooldown
+            cooldownRef.current = 50; // ~0.8s cooldown
           }
           isInUpRef.current = false;
           setIsInUpPhase(false);
         }
       }
     } catch {
-      // Skip frame on error
+      // Skip frame
     }
-  }, [videoRef, canvasRef, getShoulderHipRatio, calibrationPhase]);
+  }, [videoRef, canvasRef]);
 
-  // Animation loop
   useEffect(() => {
     if (!enabled) {
       stopCamera();
@@ -341,17 +350,13 @@ export function usePoseDetection(
     const loop = () => {
       if (!running) return;
       detectPose().then(() => {
-        if (running) {
-          animFrameRef.current = requestAnimationFrame(loop);
-        }
+        if (running) animFrameRef.current = requestAnimationFrame(loop);
       });
     };
 
     const init = async () => {
       await startCamera();
-      if (!detectorRef.current) {
-        await initDetector();
-      }
+      if (!detectorRef.current) await initDetector();
       if (running) loop();
     };
 
@@ -359,9 +364,6 @@ export function usePoseDetection(
 
     return () => {
       running = false;
-      if (calibrationTimerRef.current) {
-        clearTimeout(calibrationTimerRef.current);
-      }
       stopCamera();
     };
   }, [enabled, startCamera, stopCamera, detectPose, initDetector]);
@@ -375,26 +377,7 @@ export function usePoseDetection(
     angleHistoryRef.current = [];
   }, []);
 
-  // Start calibration: lie down first, then sit up
-  const startCalibration = useCallback(() => {
-    resetCount();
-    lyingSamplesRef.current = [];
-    sittingSamplesRef.current = [];
-    setCalibrationPhase("lying");
-    setCalibration((prev) => ({ ...prev, done: false }));
-
-    // After 3 seconds of collecting lying samples, switch to sitting
-    calibrationTimerRef.current = setTimeout(() => {
-      setCalibrationPhase("sitting");
-      // After 3 more seconds, finish
-      calibrationTimerRef.current = setTimeout(() => {
-        setCalibrationPhase("none");
-        setCalibration((prev) => ({ ...prev, done: true }));
-      }, 3000);
-    }, 3000);
-  }, [resetCount]);
-
-  // Manual rep button (fallback if AI detection doesn't work)
+  // Manual rep fallback
   const addManualRep = useCallback(() => {
     repCountRef.current += 1;
     setRepCount(repCountRef.current);
@@ -407,9 +390,6 @@ export function usePoseDetection(
     resetCount,
     isInUpPhase,
     modelLoaded,
-    calibration,
-    calibrationPhase,
-    startCalibration,
     addManualRep,
   };
 }

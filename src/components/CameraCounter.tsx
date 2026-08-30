@@ -8,8 +8,8 @@ import {
   Trophy,
   Zap,
   ExternalLink,
-  Settings,
   Hand,
+  Smartphone,
 } from "lucide-react";
 
 interface CameraCounterProps {
@@ -25,6 +25,7 @@ export function CameraCounter({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [cameraOn, setCameraOn] = useState(false);
   const [sessionActive, setSessionActive] = useState(false);
+  const [showInstructions, setShowInstructions] = useState(false);
 
   const {
     repCount,
@@ -33,9 +34,6 @@ export function CameraCounter({
     resetCount,
     isInUpPhase,
     modelLoaded,
-    calibration,
-    calibrationPhase,
-    startCalibration,
     addManualRep,
   } = usePoseDetection(videoRef, canvasRef, cameraOn);
 
@@ -45,6 +43,9 @@ export function CameraCounter({
     resetCount();
     setSessionActive(true);
     setCameraOn(true);
+    setShowInstructions(true);
+    // Auto-hide instructions after 8 seconds
+    setTimeout(() => setShowInstructions(false), 8000);
   }, [resetCount]);
 
   const endSession = useCallback(() => {
@@ -63,8 +64,35 @@ export function CameraCounter({
     }
   }, [cameraOn]);
 
+  // Angle-based status
+  const angleStatus =
+    currentAngle > 150
+      ? { text: "LYING — Sit up!", color: "text-red-400" }
+      : currentAngle < 80
+        ? { text: "SITTING — Lie back down!", color: "text-green-400" }
+        : { text: "MOVING...", color: "text-yellow-400" };
+
   return (
     <div className="flex flex-col items-center gap-4 w-full">
+      {/* Phone positioning guide — always visible before session */}
+      {!sessionActive && (
+        <div className="w-full max-w-md clay-card p-4">
+          <div className="flex items-start gap-3">
+            <Smartphone className="w-5 h-5 text-primary mt-0.5 shrink-0" />
+            <div>
+              <p className="text-sm font-medium text-foreground">
+                Phone Placement
+              </p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Place your phone <strong>to your side</strong> (profile view).
+                The camera needs to see your body from the side to count situps
+                correctly. Front view will NOT work.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Camera viewport */}
       <div className="relative w-full max-w-md clay-card-lg overflow-hidden">
         <div className="aspect-[4/3] bg-muted relative">
@@ -73,12 +101,10 @@ export function CameraCounter({
             className="absolute inset-0 w-full h-full object-cover rounded-[var(--clay-radius)]"
             playsInline
             muted
-            style={{ transform: "scaleX(-1)" }}
           />
           <canvas
             ref={canvasRef}
             className="absolute inset-0 w-full h-full object-cover rounded-[var(--clay-radius)]"
-            style={{ transform: "scaleX(-1)" }}
           />
 
           {/* Overlay UI */}
@@ -94,57 +120,41 @@ export function CameraCounter({
                   <span className="text-xs text-muted-foreground">reps</span>
                 </div>
               </div>
-              {sessionActive && (
+              {sessionActive && modelLoaded && (
                 <div className="clay-pill bg-background/80 backdrop-blur-sm px-3 py-2">
-                  <div
-                    className={`w-2.5 h-2.5 rounded-full ${isInUpPhase ? "bg-green-500" : "bg-yellow-400"} animate-pulse`}
-                  />
+                  <span className={`text-xs font-bold ${angleStatus.color}`}>
+                    {currentAngle}°
+                  </span>
                 </div>
               )}
             </div>
 
-            {/* Calibration overlay */}
-            {calibrationPhase !== "none" && (
+            {/* Positioning instruction overlay */}
+            {sessionActive && showInstructions && (
               <div className="absolute inset-0 flex items-center justify-center pointer-events-auto">
-                <div className="clay-card-lg p-6 text-center max-w-xs">
-                  <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-3">
-                    <Settings className="w-6 h-6 text-primary animate-spin" />
-                  </div>
-                  <p className="text-lg font-bold text-foreground">
-                    {calibrationPhase === "lying"
-                      ? "Lie Down"
-                      : "Sit Up"}
+                <div
+                  className="clay-card-lg p-5 text-center max-w-xs cursor-pointer"
+                  onClick={() => setShowInstructions(false)}
+                >
+                  <Smartphone className="w-8 h-8 text-primary mx-auto mb-2 rotate-90" />
+                  <p className="text-base font-bold text-foreground">
+                    Place Phone to Your Side
                   </p>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    {calibrationPhase === "lying"
-                      ? "Stay still in lying position..."
-                      : "Stay still in sitting position..."}
+                  <p className="text-xs text-muted-foreground mt-1">
+                    The camera must see your full body profile. Prop your phone
+                    against something, then lie down in front of it.
                   </p>
-                  <div className="w-full h-2 bg-muted rounded-full mt-3 overflow-hidden">
-                    <div
-                      className="h-full bg-primary rounded-full transition-all duration-1000"
-                      style={{
-                        width:
-                          calibrationPhase === "lying" ? "50%" : "100%",
-                      }}
-                    />
-                  </div>
+                  <p className="text-[10px] text-primary mt-2">Tap to dismiss</p>
                 </div>
               </div>
             )}
 
             {/* Bottom status */}
             <div className="absolute bottom-4 left-4 right-4 pointer-events-auto">
-              {cameraOn && calibrationPhase === "none" && (
+              {cameraOn && !showInstructions && (
                 <div className="clay-inset bg-background/70 backdrop-blur-sm px-4 py-3 text-center">
-                  <p className="text-sm text-muted-foreground">
-                    {!calibration.done
-                      ? "Tap Calibrate for best accuracy, or start doing situps"
-                      : isInUpPhase
-                        ? "Sitting up — now lie back down"
-                        : currentAngle > 25
-                          ? "Lying down — sit up now!"
-                          : "Get in position..."}
+                  <p className={`text-sm font-medium ${angleStatus.color}`}>
+                    {angleStatus.text}
                   </p>
                 </div>
               )}
@@ -161,13 +171,13 @@ export function CameraCounter({
         </div>
       </div>
 
-      {/* Model loading indicator */}
+      {/* Model loading */}
       {cameraOn && !modelLoaded && (
-        <div className="w-full max-w-md clay-card p-4">
+        <div className="w-full max-w-md clay-card p-3">
           <div className="flex items-center gap-3">
-            <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-            <p className="text-sm text-muted-foreground">
-              Loading AI pose detection model...
+            <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+            <p className="text-xs text-muted-foreground">
+              Loading AI pose model...
             </p>
           </div>
         </div>
@@ -203,64 +213,39 @@ export function CameraCounter({
         )}
       </div>
 
-      {/* Angle / Ratio meter */}
+      {/* Angle meter */}
       {cameraOn && modelLoaded && (
         <div className="w-full max-w-md clay-card p-4">
           <div className="flex items-center justify-between mb-2">
             <span className="text-sm font-medium text-foreground">
-              Body Position
+              Shoulder-Hip-Knee Angle
             </span>
-            <span className="text-sm text-muted-foreground">
-              {currentAngle}% —{" "}
-              {currentAngle < 20
-                ? "Lying down"
-                : currentAngle > 30
-                  ? "Sitting up"
-                  : "Moving"}
+            <span className={`text-sm font-bold ${angleStatus.color}`}>
+              {currentAngle}°
             </span>
           </div>
           <div className="w-full h-3 clay-inset overflow-hidden">
             <div
               className="h-full rounded-[var(--clay-radius)] transition-all duration-100"
               style={{
-                width: `${Math.min(currentAngle, 100)}%`,
+                width: `${Math.min((currentAngle / 180) * 100, 100)}%`,
                 background:
-                  currentAngle > 30
-                    ? "linear-gradient(135deg, #b5e8d5, #5ecfb5)"
-                    : currentAngle < 20
-                      ? "linear-gradient(135deg, #f8c8dc, #f4845f)"
+                  currentAngle > 150
+                    ? "linear-gradient(135deg, #f8c8dc, #f4845f)"
+                    : currentAngle < 80
+                      ? "linear-gradient(135deg, #b5e8d5, #5ecfb5)"
                       : "linear-gradient(135deg, #fbbf24, #f59e0b)",
               }}
             />
           </div>
           <div className="flex justify-between mt-1">
-            <span className="text-[10px] text-red-400">
-              Lying ({"<"}20%)
-            </span>
             <span className="text-[10px] text-green-500">
-              Sitting ({">"}30%)
+              Sitting ({'<'}80°)
+            </span>
+            <span className="text-[10px] text-red-400">
+              Lying ({'>'}150°)
             </span>
           </div>
-        </div>
-      )}
-
-      {/* Calibrate button */}
-      {cameraOn && modelLoaded && !calibration.done && (
-        <div className="w-full max-w-md">
-          <Button
-            onClick={startCalibration}
-            className="clay-btn w-full h-12 text-sm font-medium"
-            style={{ background: "var(--secondary)", color: "var(--secondary-foreground)" }}
-            disabled={calibrationPhase !== "none"}
-          >
-            <Settings className="w-4 h-4 mr-2" />
-            {calibrationPhase !== "none"
-              ? "Calibrating..."
-              : "Calibrate for Better Accuracy"}
-          </Button>
-          <p className="text-[10px] text-muted-foreground text-center mt-1">
-            Lie down, tap calibrate, hold still for 3 sec, then sit up and hold for 3 sec
-          </p>
         </div>
       )}
 
@@ -309,7 +294,7 @@ export function CameraCounter({
         </Button>
       </div>
 
-      {/* Manual rep button (fallback) */}
+      {/* Manual rep button */}
       {sessionActive && (
         <div className="w-full max-w-md">
           <Button
@@ -321,37 +306,18 @@ export function CameraCounter({
             }}
           >
             <Hand className="w-5 h-5 mr-2" />
-            +1 Rep (Manual)
+            +1 Rep (Manual Count)
           </Button>
           <p className="text-[10px] text-muted-foreground text-center mt-1">
-            Tap this if AI detection isn't counting properly
+            Use this if AI isn't detecting your reps
           </p>
         </div>
       )}
 
-      {/* Error display */}
+      {/* Error */}
       {error && (
         <div className="clay-card p-4 w-full max-w-md">
-          {error === "CAMERA_BLOCKED_IFRAME" ? (
-            <div className="text-center">
-              <CameraOff className="w-8 h-8 text-[var(--primary)] mx-auto mb-2" />
-              <p className="text-sm font-medium text-foreground mb-1">
-                Camera unavailable in preview
-              </p>
-              <p className="text-xs text-muted-foreground mb-3">
-                Open the app in a full tab or on your phone to use the camera.
-              </p>
-              <Button
-                onClick={() => window.open(window.location.href, "_blank")}
-                className="clay-btn h-10 px-5 text-sm"
-              >
-                <ExternalLink className="w-4 h-4 mr-2" />
-                Open in New Tab
-              </Button>
-            </div>
-          ) : (
-            <p className="text-sm text-red-500">{error}</p>
-          )}
+          <p className="text-sm text-red-500">{error}</p>
         </div>
       )}
     </div>
