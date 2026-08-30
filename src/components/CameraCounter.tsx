@@ -1,21 +1,43 @@
 import { useRef, useState, useCallback } from "react";
 import { usePoseDetection } from "@/hooks/usePoseDetection";
 import { Button } from "@/components/ui/button";
-import { Camera, CameraOff, RotateCcw, Trophy, Zap, ExternalLink } from "lucide-react";
+import {
+  Camera,
+  CameraOff,
+  RotateCcw,
+  Trophy,
+  Zap,
+  ExternalLink,
+  Settings,
+  Hand,
+} from "lucide-react";
 
 interface CameraCounterProps {
   onSessionEnd?: (reps: number) => void;
   dailyGoal?: number;
 }
 
-export function CameraCounter({ onSessionEnd, dailyGoal = 100 }: CameraCounterProps) {
+export function CameraCounter({
+  onSessionEnd,
+  dailyGoal = 100,
+}: CameraCounterProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [cameraOn, setCameraOn] = useState(false);
   const [sessionActive, setSessionActive] = useState(false);
 
-  const { repCount, currentAngle, error, resetCount, isInUpPhase } =
-    usePoseDetection(videoRef, canvasRef, cameraOn);
+  const {
+    repCount,
+    currentAngle,
+    error,
+    resetCount,
+    isInUpPhase,
+    modelLoaded,
+    calibration,
+    calibrationPhase,
+    startCalibration,
+    addManualRep,
+  } = usePoseDetection(videoRef, canvasRef, cameraOn);
 
   const goalProgress = Math.min((repCount / dailyGoal) * 100, 100);
 
@@ -42,7 +64,7 @@ export function CameraCounter({ onSessionEnd, dailyGoal = 100 }: CameraCounterPr
   }, [cameraOn]);
 
   return (
-    <div className="flex flex-col items-center gap-6 w-full">
+    <div className="flex flex-col items-center gap-4 w-full">
       {/* Camera viewport */}
       <div className="relative w-full max-w-md clay-card-lg overflow-hidden">
         <div className="aspect-[4/3] bg-muted relative">
@@ -66,27 +88,63 @@ export function CameraCounter({ onSessionEnd, dailyGoal = 100 }: CameraCounterPr
               <div className="clay-pill bg-background/80 backdrop-blur-sm px-4 py-2 pointer-events-auto">
                 <div className="flex items-center gap-2">
                   <Zap className="w-5 h-5 text-[var(--primary)]" />
-                  <span className="font-bold text-2xl text-foreground">{repCount}</span>
+                  <span className="font-bold text-2xl text-foreground">
+                    {repCount}
+                  </span>
                   <span className="text-xs text-muted-foreground">reps</span>
                 </div>
               </div>
               {sessionActive && (
                 <div className="clay-pill bg-background/80 backdrop-blur-sm px-3 py-2">
-                  <div className={`w-2.5 h-2.5 rounded-full ${isInUpPhase ? "bg-green-500" : "bg-red-400"} animate-pulse`} />
+                  <div
+                    className={`w-2.5 h-2.5 rounded-full ${isInUpPhase ? "bg-green-500" : "bg-yellow-400"} animate-pulse`}
+                  />
                 </div>
               )}
             </div>
 
+            {/* Calibration overlay */}
+            {calibrationPhase !== "none" && (
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-auto">
+                <div className="clay-card-lg p-6 text-center max-w-xs">
+                  <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-3">
+                    <Settings className="w-6 h-6 text-primary animate-spin" />
+                  </div>
+                  <p className="text-lg font-bold text-foreground">
+                    {calibrationPhase === "lying"
+                      ? "Lie Down"
+                      : "Sit Up"}
+                  </p>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    {calibrationPhase === "lying"
+                      ? "Stay still in lying position..."
+                      : "Stay still in sitting position..."}
+                  </p>
+                  <div className="w-full h-2 bg-muted rounded-full mt-3 overflow-hidden">
+                    <div
+                      className="h-full bg-primary rounded-full transition-all duration-1000"
+                      style={{
+                        width:
+                          calibrationPhase === "lying" ? "50%" : "100%",
+                      }}
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Bottom status */}
             <div className="absolute bottom-4 left-4 right-4 pointer-events-auto">
-              {cameraOn && (
+              {cameraOn && calibrationPhase === "none" && (
                 <div className="clay-inset bg-background/70 backdrop-blur-sm px-4 py-3 text-center">
                   <p className="text-sm text-muted-foreground">
-                    {isInUpPhase
-                      ? "Sitting up — now lie back down"
-                      : currentAngle > 60
-                        ? "Lying down — sit up now!"
-                        : "Keep going — full range of motion"}
+                    {!calibration.done
+                      ? "Tap Calibrate for best accuracy, or start doing situps"
+                      : isInUpPhase
+                        ? "Sitting up — now lie back down"
+                        : currentAngle > 25
+                          ? "Lying down — sit up now!"
+                          : "Get in position..."}
                   </p>
                 </div>
               )}
@@ -102,6 +160,18 @@ export function CameraCounter({ onSessionEnd, dailyGoal = 100 }: CameraCounterPr
           )}
         </div>
       </div>
+
+      {/* Model loading indicator */}
+      {cameraOn && !modelLoaded && (
+        <div className="w-full max-w-md clay-card p-4">
+          <div className="flex items-center gap-3">
+            <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+            <p className="text-sm text-muted-foreground">
+              Loading AI pose detection model...
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Goal progress */}
       <div className="w-full max-w-md clay-card p-5">
@@ -119,64 +189,106 @@ export function CameraCounter({ onSessionEnd, dailyGoal = 100 }: CameraCounterPr
             className="h-full rounded-[var(--clay-radius)] transition-all duration-500 ease-out"
             style={{
               width: `${goalProgress}%`,
-              background: goalProgress >= 100
-                ? "linear-gradient(135deg, #b5e8d5, #5ecfb5)"
-                : "linear-gradient(135deg, #f4845f, #f8c8dc)",
+              background:
+                goalProgress >= 100
+                  ? "linear-gradient(135deg, #b5e8d5, #5ecfb5)"
+                  : "linear-gradient(135deg, #f4845f, #f8c8dc)",
             }}
           />
         </div>
         {goalProgress >= 100 && (
           <p className="mt-2 text-sm font-medium text-[var(--accent)]">
-            Daily goal reached.
+            Daily goal reached!
           </p>
         )}
       </div>
 
-      {/* Angle meter */}
-      {cameraOn && (
+      {/* Angle / Ratio meter */}
+      {cameraOn && modelLoaded && (
         <div className="w-full max-w-md clay-card p-4">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-medium text-foreground">Torso Angle</span>
+            <span className="text-sm font-medium text-foreground">
+              Body Position
+            </span>
             <span className="text-sm text-muted-foreground">
-              {currentAngle}° — {currentAngle < 35 ? "Sitting up" : currentAngle > 60 ? "Lying down" : "Moving"}
+              {currentAngle}% —{" "}
+              {currentAngle < 20
+                ? "Lying down"
+                : currentAngle > 30
+                  ? "Sitting up"
+                  : "Moving"}
             </span>
           </div>
           <div className="w-full h-3 clay-inset overflow-hidden">
             <div
               className="h-full rounded-[var(--clay-radius)] transition-all duration-100"
               style={{
-                width: `${Math.min(currentAngle, 90) / 0.9}%`,
-                background: currentAngle < 35
-                  ? "linear-gradient(135deg, #b5e8d5, #5ecfb5)"
-                  : currentAngle > 60
-                    ? "linear-gradient(135deg, #f8c8dc, #f4845f)"
-                    : "linear-gradient(135deg, #fbbf24, #f59e0b)",
+                width: `${Math.min(currentAngle, 100)}%`,
+                background:
+                  currentAngle > 30
+                    ? "linear-gradient(135deg, #b5e8d5, #5ecfb5)"
+                    : currentAngle < 20
+                      ? "linear-gradient(135deg, #f8c8dc, #f4845f)"
+                      : "linear-gradient(135deg, #fbbf24, #f59e0b)",
               }}
             />
           </div>
           <div className="flex justify-between mt-1">
-            <span className="text-[10px] text-green-500">← Sitting up ({'<'}35°)</span>
-            <span className="text-[10px] text-red-400">Lying down ({'>'}60°) →</span>
+            <span className="text-[10px] text-red-400">
+              Lying ({"<"}20%)
+            </span>
+            <span className="text-[10px] text-green-500">
+              Sitting ({">"}30%)
+            </span>
           </div>
+        </div>
+      )}
+
+      {/* Calibrate button */}
+      {cameraOn && modelLoaded && !calibration.done && (
+        <div className="w-full max-w-md">
+          <Button
+            onClick={startCalibration}
+            className="clay-btn w-full h-12 text-sm font-medium"
+            style={{ background: "var(--secondary)", color: "var(--secondary-foreground)" }}
+            disabled={calibrationPhase !== "none"}
+          >
+            <Settings className="w-4 h-4 mr-2" />
+            {calibrationPhase !== "none"
+              ? "Calibrating..."
+              : "Calibrate for Better Accuracy"}
+          </Button>
+          <p className="text-[10px] text-muted-foreground text-center mt-1">
+            Lie down, tap calibrate, hold still for 3 sec, then sit up and hold for 3 sec
+          </p>
         </div>
       )}
 
       {/* Controls */}
       <div className="flex gap-3 w-full max-w-md">
         {!sessionActive ? (
-          <Button onClick={startSession} className="clay-btn flex-1 h-14 text-lg font-semibold">
+          <Button
+            onClick={startSession}
+            className="clay-btn flex-1 h-14 text-lg font-semibold"
+          >
             <Camera className="w-5 h-5 mr-2" />
             Start Session
           </Button>
         ) : (
           <>
-            <Button onClick={endSession} className="clay-btn flex-1 h-14 text-lg font-semibold">
+            <Button
+              onClick={endSession}
+              className="clay-btn flex-1 h-14 text-lg font-semibold"
+            >
               End Session
             </Button>
             <Button
               onClick={toggleCamera}
               className="clay-btn h-14 w-14"
-              style={{ background: "var(--secondary)", color: "var(--secondary-foreground)" }}
+              style={{
+                background: "var(--secondary)",
+                color: "var(--secondary-foreground)",
+              }}
             >
               <CameraOff className="w-5 h-5" />
             </Button>
@@ -188,12 +300,36 @@ export function CameraCounter({ onSessionEnd, dailyGoal = 100 }: CameraCounterPr
             setSessionActive(false);
           }}
           className="clay-btn h-14 w-14"
-          style={{ background: "var(--muted)", color: "var(--muted-foreground)" }}
+          style={{
+            background: "var(--muted)",
+            color: "var(--muted-foreground)",
+          }}
         >
           <RotateCcw className="w-5 h-5" />
         </Button>
       </div>
 
+      {/* Manual rep button (fallback) */}
+      {sessionActive && (
+        <div className="w-full max-w-md">
+          <Button
+            onClick={addManualRep}
+            className="clay-btn w-full h-12 text-base font-semibold"
+            style={{
+              background: "var(--primary)",
+              color: "var(--primary-foreground)",
+            }}
+          >
+            <Hand className="w-5 h-5 mr-2" />
+            +1 Rep (Manual)
+          </Button>
+          <p className="text-[10px] text-muted-foreground text-center mt-1">
+            Tap this if AI detection isn't counting properly
+          </p>
+        </div>
+      )}
+
+      {/* Error display */}
       {error && (
         <div className="clay-card p-4 w-full max-w-md">
           {error === "CAMERA_BLOCKED_IFRAME" ? (
@@ -203,8 +339,7 @@ export function CameraCounter({ onSessionEnd, dailyGoal = 100 }: CameraCounterPr
                 Camera unavailable in preview
               </p>
               <p className="text-xs text-muted-foreground mb-3">
-                Browser security blocks camera access inside embedded previews.
-                Open the app in a full tab to use the camera.
+                Open the app in a full tab or on your phone to use the camera.
               </p>
               <Button
                 onClick={() => window.open(window.location.href, "_blank")}
