@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'dart:convert';
 import 'dart:async';
+import 'package:camera/camera.dart';
+import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
 import 'package:http/http.dart' as http;
-import 'situp_counter.dart';
+import '../utils/pose_utils.dart';
 import 'leaderboard_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
@@ -39,6 +41,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Timer? _pollTimer;
   String _searchStatus = "";
 
+  // Camera state for battle
+  CameraController? _cameraController;
+  PoseDetector? _poseDetector;
+  final SitupDetector _situpDetector = SitupDetector();
+  bool _isCameraReady = false;
+  bool _isProcessing = false;
+  double _currentAngle = 180;
+  String _cameraStatus = "Starting camera...";
+  String _phaseLabel = "IDLE";
+  int _confirmProgress = 0;
+
   // Light colors
   static const Color _lightBg = Color(0xFFFDF5F0);
   static const Color _lightCard = Color(0xFFFFF0E8);
@@ -58,10 +71,163 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Color get _subtext => widget.isDark ? _darkSubtext : _lightSubtext;
 
   @override
+  void initState() {
+    super.initState();
+    _poseDetector = PoseDetector(
+      options: PoseDetectorOptions(
+        model: PoseDetectionModel.base,
+        mode: PoseDetectionMode.stream,
+      ),
+    );
+  }
+
+  @override
   void dispose() {
     _battleTimer?.cancel();
     _pollTimer?.cancel();
+    _cameraController?.dispose();
+    _poseDetector?.close();
     super.dispose();
+  }
+
+  // --- CAMERA FOR BATTLE ---
+  Future<void> _startBattleCamera() async {
+    try {
+      final cameras = await availableCameras();
+      if (cameras.isEmpty) {
+        setState(() => _cameraStatus = "No camera found");
+        return;
+      }
+
+      CameraDescription? selectedCamera;
+      try {
+        selectedCamera = cameras.firstWhere(
+          (c) => c.lensDirection == CameraLensDirection.back,
+        );
+      } catch (_) {
+        selectedCamera = cameras.first;
+      }
+
+      _cameraController = CameraController(
+        selectedCamera,
+        ResolutionPreset.medium,
+        enableAudio: false,
+      );
+
+      await _cameraController!.initialize();
+
+      if (_cameraController!.value.isStreamingImages) {
+        await _cameraController!.stopImageStream();
+      }
+
+      await _cameraController!.startImageStream((CameraImage image) {
+        if (!_isProcessing && _inBattle) _processBattleFrame(image);
+      });
+
+      setState(() {
+        _isCameraReady = true;
+        _cameraStatus = "Camera ready — do situps!";
+      });
+    } catch (e) {
+      setState(() => _cameraStatus = "Camera error: $e");
+    }
+  }
+
+  Future<void> _stopBattleCamera() async {
+    try {
+      if (_cameraController != null && _cameraController!.value.isStreamingImages) {
+        await _cameraController!.stopImageStream();
+      }
+      await _cameraController?.dispose();
+    } catch (_) {}
+    _cameraController = null;
+    setState(() => _isCameraReady = false);
+  }
+
+  Future<void> _processBattleFrame(CameraImage image) async {
+    if (_isProcessing || _poseDetector == null || !_inBattle) return;
+    _isProcessing = true;
+
+    try {
+      final inputImage = _convertCameraImage(image);
+      if (inputImage == null) {
+        _isProcessing = false;
+        return;
+      }
+
+      final poses = await _poseDetector!.processImage(inputImage);
+
+      if (poses.isNotEmpty) {
+        final pose = poses.first;
+        final ls = pose.landmarks[PoseLandmarkType.leftShoulder];
+        final rs = pose.landmarks[PoseLandmarkType.rightShoulder];
+        final lh = pose.landmarks[PoseLandmarkType.leftHip];
+        final rh = pose.landmarks[PoseLandmarkType.rightHip];
+        final lk = pose.landmarks[PoseLandmarkType.leftKnee];
+        final rk = pose.landmarks[PoseLandmarkType.rightKnee];
+
+        double angle = 180;
+        int keypointsFound = 0;
+
+        if (ls != null && lh != null && lk != null) {
+          angle = calculateAngle(ls, lh, lk);
+          keypointsFound = 3;
+        } else if (rs != null && rh != null && rk != null) {
+          angle = calculateAngle(rs, rh, rk);
+          keypointsFound = 3;
+        }
+
+        setState(() {
+          _currentAngle = angle;
+          _phaseLabel = _situpDetector.phase.name.toUpperCase();
+          _confirmProgress = _situpDetector.confirmCount;
+        });
+
+        if (keypointsFound >= 3) {
+          if (_situpDetector.processAngle(angle)) {
+            setState(() {
+              _battleMyReps = _situpDetector.repCount;
+              _cameraStatus = "✅ Rep #$_battleMyReps counted!";
+            });
+          } else {
+            if (angle > SitupDetector.lyingAngle) {
+              setState(() => _cameraStatus = "↓ LYING — sit up!");
+            } else if (angle < SitupDetector.sittingAngle) {
+              setState(() => _cameraStatus = "↑ SITTING — lie back!");
+            } else {
+              setState(() => _cameraStatus = "↔ Moving...");
+            }
+          }
+        }
+      } else {
+        setState(() {
+          _cameraStatus = "❌ No body detected — move into view";
+        });
+      }
+    } catch (_) {}
+
+    _isProcessing = false;
+  }
+
+  InputImage? _convertCameraImage(CameraImage image) {
+    final rotation = InputImageRotationValue.fromRawValue(
+          _cameraController!.description.sensorOrientation,
+        ) ??
+        InputImageRotation.rotation0deg;
+
+    final format = InputImageFormatValue.fromRawValue(image.format.raw);
+    if (format == null) return null;
+
+    final plane = image.planes.first;
+    return InputImage.fromBytes(
+      bytes: plane.bytes,
+      metadata: InputImageMetadata(
+        size: Size(image.width.toDouble(), image.height.toDouble()),
+        rotation: rotation,
+        format: format,
+        bytesPerRow: plane.bytesPerRow,
+      ),
+    );
   }
 
   // --- RANDOM MATCH ---
@@ -180,7 +346,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _startBattle("Opponent", _selectedDuration);
   }
 
-  void _startBattle(String opponent, int duration) {
+  void _startBattle(String opponent, int duration) async {
     setState(() {
       _isSearching = false;
       _inBattle = true;
@@ -188,7 +354,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
       _battleTimeLeft = duration;
       _battleMyReps = 0;
       _battleOpponentReps = 0;
+      _cameraStatus = "Starting camera...";
     });
+
+    // Start camera for counting
+    _situpDetector.reset();
+    await _startBattleCamera();
 
     _battleTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       setState(() {
@@ -212,6 +383,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       }
 
       try {
+        // Poll opponent score
         final response = await http.post(
           Uri.parse('https://graceful-mink-900.convex.site/api/query'),
           headers: {'Content-Type': 'application/json'},
@@ -233,28 +405,32 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 _battleOpponentReps = battle['creatorScore'] ?? 0;
               }
             });
-
-            await http.post(
-              Uri.parse('https://graceful-mink-900.convex.site/api/mutation'),
-              headers: {'Content-Type': 'application/json'},
-              body: json.encode({
-                'path': 'battles:updateScore',
-                'args': {
-                  'battleId': _battleId!,
-                  'userId': widget.username,
-                  'score': _battleMyReps,
-                },
-              }),
-            );
           }
         }
+
+        // Update our score on server
+        await http.post(
+          Uri.parse('https://graceful-mink-900.convex.site/api/mutation'),
+          headers: {'Content-Type': 'application/json'},
+          body: json.encode({
+            'path': 'battles:updateScore',
+            'args': {
+              'battleId': _battleId!,
+              'userId': widget.username,
+              'score': _battleMyReps,
+            },
+          }),
+        );
       } catch (_) {}
     });
   }
 
-  void _endBattle() {
+  void _endBattle() async {
     _battleTimer?.cancel();
     _pollTimer?.cancel();
+
+    // Stop camera
+    await _stopBattleCamera();
 
     final myScore = _battleMyReps;
     final oppScore = _battleOpponentReps;
@@ -315,10 +491,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   Widget build(BuildContext context) {
     final screens = [
-      SitupCounterScreen(
-        isDark: widget.isDark,
-        onSessionEnd: (reps) {},
-      ),
+      _buildCounterTab(),
       _buildBattlesScreen(),
       LeaderboardScreen(isDark: widget.isDark),
     ];
@@ -435,6 +608,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  // --- COUNTER TAB (simplified — delegates to SitupCounterScreen concept) ---
+  Widget _buildCounterTab() {
+    return _CounterTab(
+      isDark: widget.isDark,
+      accent: _accent,
+      card: _card,
+      text: _text,
+      subtext: _subtext,
     );
   }
 
@@ -672,106 +856,777 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final minutes = _battleTimeLeft ~/ 60;
     final seconds = _battleTimeLeft % 60;
 
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(24),
-              decoration: BoxDecoration(
-                color: _card,
-                borderRadius: BorderRadius.circular(28),
-                boxShadow: [
-                  BoxShadow(
-                    color: _accent.withAlpha(20),
-                    blurRadius: 20,
-                    offset: const Offset(0, 8),
-                  ),
-                ],
-              ),
-              child: Column(
-                children: [
-                  Text(
-                    "⚔️ BATTLE IN PROGRESS",
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
-                      color: _accent,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Timer
-                  Text(
-                    "${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}",
-                    style: TextStyle(
-                      fontSize: 56,
-                      fontWeight: FontWeight.w900,
-                      color: _text,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Scores
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceAround,
+    return Column(
+      children: [
+        // Camera view (top half)
+        Expanded(
+          flex: 3,
+          child: Container(
+            width: double.infinity,
+            margin: const EdgeInsets.fromLTRB(20, 20, 20, 8),
+            decoration: BoxDecoration(
+              color: _card,
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: [
+                BoxShadow(
+                  color: _accent.withAlpha(20),
+                  blurRadius: 20,
+                  offset: const Offset(0, 8),
+                ),
+              ],
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: _isCameraReady && _cameraController != null
+                ? Stack(
                     children: [
-                      Column(
-                        children: [
-                          Text(
-                            "You",
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.bold,
-                              color: _text,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            "$_battleMyReps",
-                            style: TextStyle(
-                              fontSize: 36,
-                              fontWeight: FontWeight.w900,
-                              color: _accent,
-                            ),
-                          ),
-                          Text("reps", style: TextStyle(fontSize: 12, color: _subtext)),
-                        ],
+                      CameraPreview(_cameraController!),
+                      // Timer badge
+                      Positioned(
+                        top: 12, left: 12,
+                        child: _buildBadge(
+                          "${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}",
+                          _battleTimeLeft <= 10 ? Colors.red : _accent,
+                        ),
                       ),
-                      Container(
-                        width: 2,
-                        height: 60,
-                        color: _subtext.withAlpha(50),
+                      // Reps badge
+                      Positioned(
+                        top: 12, right: 12,
+                        child: _buildBadge("⚡ $_battleMyReps", _accent),
                       ),
-                      Column(
-                        children: [
-                          Text(
-                            _opponentName ?? "Opponent",
+                      // Camera status
+                      Positioned(
+                        bottom: 12, left: 12, right: 12,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                          decoration: BoxDecoration(
+                            color: widget.isDark ? const Color(0xFF2D2D44).withAlpha(230) : Colors.white.withAlpha(220),
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          child: Text(
+                            _cameraStatus,
+                            textAlign: TextAlign.center,
                             style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.bold,
                               color: _text,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
                             ),
                           ),
-                          const SizedBox(height: 4),
-                          Text(
-                            "$_battleOpponentReps",
-                            style: const TextStyle(
-                              fontSize: 36,
-                              fontWeight: FontWeight.w900,
-                              color: Color(0xFF2196F3),
-                            ),
-                          ),
-                          Text("reps", style: TextStyle(fontSize: 12, color: _subtext)),
-                        ],
+                        ),
+                      ),
+                    ],
+                  )
+                : Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      SizedBox(
+                        width: 32,
+                        height: 32,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 3,
+                          color: _accent,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        _cameraStatus,
+                        style: TextStyle(color: _subtext, fontSize: 14),
                       ),
                     ],
                   ),
+          ),
+        ),
+
+        // Scoreboard (bottom part)
+        Expanded(
+          flex: 2,
+          child: Container(
+            width: double.infinity,
+            margin: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: _card,
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: [
+                BoxShadow(
+                  color: _accent.withAlpha(20),
+                  blurRadius: 20,
+                  offset: const Offset(0, 8),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  "⚔️ BATTLE IN PROGRESS",
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: _accent,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                // Scores
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: [
+                    Column(
+                      children: [
+                        Text(
+                          "You",
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            color: _text,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          "$_battleMyReps",
+                          style: TextStyle(
+                            fontSize: 36,
+                            fontWeight: FontWeight.w900,
+                            color: _accent,
+                          ),
+                        ),
+                        Text("reps", style: TextStyle(fontSize: 12, color: _subtext)),
+                      ],
+                    ),
+                    Container(
+                      width: 2,
+                      height: 50,
+                      color: _subtext.withAlpha(50),
+                    ),
+                    Column(
+                      children: [
+                        Text(
+                          _opponentName ?? "Opponent",
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            color: _text,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          "$_battleOpponentReps",
+                          style: const TextStyle(
+                            fontSize: 36,
+                            fontWeight: FontWeight.w900,
+                            color: Color(0xFF2196F3),
+                          ),
+                        ),
+                        Text("reps", style: TextStyle(fontSize: 12, color: _subtext)),
+                      ],
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildBadge(String text, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.white.withAlpha(220),
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [BoxShadow(color: Colors.black.withAlpha(15), blurRadius: 8)],
+      ),
+      child: Text(text, style: TextStyle(color: color, fontSize: 14, fontWeight: FontWeight.bold)),
+    );
+  }
+}
+
+// --- COUNTER TAB WIDGET (inline to keep file self-contained) ---
+class _CounterTab extends StatefulWidget {
+  final bool isDark;
+  final Color accent;
+  final Color card;
+  final Color text;
+  final Color subtext;
+
+  const _CounterTab({
+    required this.isDark,
+    required this.accent,
+    required this.card,
+    required this.text,
+    required this.subtext,
+  });
+
+  @override
+  State<_CounterTab> createState() => _CounterTabState();
+}
+
+class _CounterTabState extends State<_CounterTab> {
+  CameraController? _cameraController;
+  PoseDetector? _poseDetector;
+  final SitupDetector _situpDetector = SitupDetector();
+
+  bool _isCameraInitialized = false;
+  bool _isProcessing = false;
+  double _currentAngle = 180;
+  int _repCount = 0;
+  int _manualReps = 0;
+  String _status = "Tap Start to begin";
+  String _phaseLabel = "IDLE";
+  int _confirmProgress = 0;
+  String _debugInfo = "";
+
+  static const Color _lightBg = Color(0xFFFDF5F0);
+  static const Color _lightCard = Color(0xFFFFF0E8);
+  static const Color _lightText = Color(0xFF3D2C2C);
+  static const Color _lightSubtext = Color(0xFF9C8A8A);
+  static const Color _accentColor = Color(0xFFE8734A);
+  static const Color _darkBg = Color(0xFF1A1A2E);
+  static const Color _darkCard = Color(0xFF252540);
+  static const Color _darkText = Color(0xFFF5F5F5);
+  static const Color _darkSubtext = Color(0xFF9CA3AF);
+
+  Color get _bgColor => widget.isDark ? _darkBg : _lightBg;
+  Color get _cardColor => widget.isDark ? _darkCard : _lightCard;
+  Color get _textColor => widget.isDark ? _darkText : _lightText;
+  Color get _subtextColor => widget.isDark ? _darkSubtext : _lightSubtext;
+
+  @override
+  void initState() {
+    super.initState();
+    _poseDetector = PoseDetector(
+      options: PoseDetectorOptions(
+        model: PoseDetectionModel.base,
+        mode: PoseDetectionMode.stream,
+      ),
+    );
+  }
+
+  Future<void> _startCamera() async {
+    try {
+      final cameras = await availableCameras();
+      if (cameras.isEmpty) {
+        setState(() => _status = "No camera found");
+        return;
+      }
+
+      CameraDescription? selectedCamera;
+      try {
+        selectedCamera = cameras.firstWhere(
+          (c) => c.lensDirection == CameraLensDirection.back,
+        );
+      } catch (_) {
+        selectedCamera = cameras.first;
+      }
+
+      _cameraController = CameraController(
+        selectedCamera,
+        ResolutionPreset.medium,
+        enableAudio: false,
+      );
+
+      await _cameraController!.initialize();
+
+      if (_cameraController!.value.isStreamingImages) {
+        await _cameraController!.stopImageStream();
+      }
+
+      await _cameraController!.startImageStream((CameraImage image) {
+        if (!_isProcessing) _processFrame(image);
+      });
+
+      setState(() {
+        _isCameraInitialized = true;
+        _status = "Camera ready — position yourself";
+      });
+    } catch (e) {
+      setState(() => _status = "Camera error: $e");
+    }
+  }
+
+  Future<void> _processFrame(CameraImage image) async {
+    if (_isProcessing || _poseDetector == null) return;
+    _isProcessing = true;
+
+    try {
+      final inputImage = _convertCameraImage(image);
+      if (inputImage == null) {
+        _isProcessing = false;
+        return;
+      }
+
+      final poses = await _poseDetector!.processImage(inputImage);
+
+      if (poses.isNotEmpty) {
+        final pose = poses.first;
+        final ls = pose.landmarks[PoseLandmarkType.leftShoulder];
+        final rs = pose.landmarks[PoseLandmarkType.rightShoulder];
+        final lh = pose.landmarks[PoseLandmarkType.leftHip];
+        final rh = pose.landmarks[PoseLandmarkType.rightHip];
+        final lk = pose.landmarks[PoseLandmarkType.leftKnee];
+        final rk = pose.landmarks[PoseLandmarkType.rightKnee];
+
+        double angle = 180;
+        String side = "none";
+        int keypointsFound = 0;
+
+        if (ls != null && lh != null && lk != null) {
+          angle = calculateAngle(ls, lh, lk);
+          side = "LEFT";
+          keypointsFound = 3;
+        } else if (rs != null && rh != null && rk != null) {
+          angle = calculateAngle(rs, rh, rk);
+          side = "RIGHT";
+          keypointsFound = 3;
+        }
+
+        _debugInfo = "Keypoints:$keypointsFound Side:$side Angle:${angle.toStringAsFixed(0)}";
+
+        setState(() {
+          _currentAngle = angle;
+          _phaseLabel = _situpDetector.phase.name.toUpperCase();
+          _confirmProgress = _situpDetector.confirmCount;
+        });
+
+        if (keypointsFound >= 3) {
+          if (_situpDetector.processAngle(angle)) {
+            setState(() {
+              _repCount = _situpDetector.repCount;
+              _status = "✅ Rep #$_repCount counted!";
+            });
+          } else {
+            if (angle > SitupDetector.lyingAngle) {
+              setState(() => _status = "↓ LYING — sit up!");
+            } else if (angle < SitupDetector.sittingAngle) {
+              setState(() => _status = "↑ SITTING — lie back!");
+            } else {
+              setState(() => _status = "↔ Moving...");
+            }
+          }
+        } else {
+          setState(() => _status = "⚠️ Only $keypointsFound keypoints — adjust position");
+        }
+      } else {
+        setState(() {
+          _status = "❌ No body detected — move into view";
+          _debugInfo = "No pose found";
+        });
+      }
+    } catch (_) {}
+
+    _isProcessing = false;
+  }
+
+  InputImage? _convertCameraImage(CameraImage image) {
+    final rotation = InputImageRotationValue.fromRawValue(
+          _cameraController!.description.sensorOrientation,
+        ) ??
+        InputImageRotation.rotation0deg;
+
+    final format = InputImageFormatValue.fromRawValue(image.format.raw);
+    if (format == null) return null;
+
+    final plane = image.planes.first;
+    return InputImage.fromBytes(
+      bytes: plane.bytes,
+      metadata: InputImageMetadata(
+        size: Size(image.width.toDouble(), image.height.toDouble()),
+        rotation: rotation,
+        format: format,
+        bytesPerRow: plane.bytesPerRow,
+      ),
+    );
+  }
+
+  void _startSession() async {
+    _situpDetector.reset();
+    setState(() {
+      _repCount = 0;
+      _manualReps = 0;
+      _status = "Starting camera...";
+    });
+    await _startCamera();
+  }
+
+  void _endSession() async {
+    await _cameraController?.stopImageStream();
+    await _cameraController?.dispose();
+    _cameraController = null;
+    final totalReps = _repCount + _manualReps;
+    setState(() {
+      _isCameraInitialized = false;
+      _status = "Session ended — $totalReps reps";
+    });
+  }
+
+  void _resetSession() {
+    _situpDetector.reset();
+    setState(() {
+      _repCount = 0;
+      _manualReps = 0;
+      _currentAngle = 180;
+      _status = "Reset — ready";
+      _phaseLabel = "IDLE";
+      _confirmProgress = 0;
+      _debugInfo = "";
+    });
+  }
+
+  void _addManualRep() {
+    setState(() {
+      _manualReps++;
+      _status = "Manual +1 (total: ${_repCount + _manualReps})";
+    });
+  }
+
+  void _undoRep() {
+    if (_manualReps > 0) {
+      setState(() {
+        _manualReps--;
+        _status = "Undid last rep (total: ${_repCount + _manualReps})";
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _cameraController?.dispose();
+    _poseDetector?.close();
+    super.dispose();
+  }
+
+  int get _totalReps => _repCount + _manualReps;
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        children: [
+          // Stats row
+          Row(
+            children: [
+              _buildStatCard("$_totalReps", "Total", Icons.local_fire_department, _accentColor),
+              const SizedBox(width: 10),
+              _buildStatCard("$_repCount", "AI", Icons.smart_toy, const Color(0xFF4CAF50)),
+              const SizedBox(width: 10),
+              _buildStatCard("$_manualReps", "Manual", Icons.touch_app, const Color(0xFF2196F3)),
+            ],
+          ),
+
+          const SizedBox(height: 16),
+
+          // Camera / placeholder
+          Container(
+            width: double.infinity,
+            height: _isCameraInitialized ? 280 : 180,
+            decoration: BoxDecoration(
+              color: _cardColor,
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: [
+                BoxShadow(color: _accentColor.withAlpha(20), blurRadius: 20, offset: const Offset(0, 8)),
+              ],
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: _isCameraInitialized && _cameraController != null
+                ? Stack(
+                    children: [
+                      CameraPreview(_cameraController!),
+                      Positioned(
+                        top: 12, left: 12,
+                        child: _buildBadge("${_currentAngle.toStringAsFixed(0)}°", _getAngleColor()),
+                      ),
+                      Positioned(
+                        top: 12, right: 12,
+                        child: _buildBadge("⚡ $_totalReps", _accentColor),
+                      ),
+                      Positioned(
+                        bottom: 12, left: 12, right: 12,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                          decoration: BoxDecoration(
+                            color: widget.isDark ? const Color(0xFF2D2D44).withAlpha(230) : Colors.white.withAlpha(220),
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          child: Text(_status,
+                              textAlign: TextAlign.center,
+                              style: TextStyle(color: _textColor, fontSize: 13, fontWeight: FontWeight.w600)),
+                        ),
+                      ),
+                      Positioned(
+                        bottom: 60, right: 16,
+                        child: GestureDetector(
+                          onTap: _addManualRep,
+                          child: Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: _accentColor,
+                              shape: BoxShape.circle,
+                              boxShadow: [BoxShadow(color: _accentColor.withAlpha(80), blurRadius: 12, offset: const Offset(0, 4))],
+                            ),
+                            child: const Icon(Icons.add, color: Colors.white, size: 28),
+                          ),
+                        ),
+                      ),
+                    ],
+                  )
+                : Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.videocam_off, size: 48, color: _subtextColor),
+                      const SizedBox(height: 12),
+                      Text("Camera is off", style: TextStyle(color: _subtextColor, fontSize: 16)),
+                    ],
+                  ),
+          ),
+
+          const SizedBox(height: 16),
+
+          // Rep counter card
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: _cardColor,
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: [BoxShadow(color: _accentColor.withAlpha(20), blurRadius: 20, offset: const Offset(0, 8))],
+            ),
+            child: Column(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(color: _accentColor.withAlpha(30), shape: BoxShape.circle),
+                  child: Icon(Icons.emoji_events, size: 40, color: _accentColor),
+                ),
+                const SizedBox(height: 16),
+                Text("$_totalReps reps",
+                    style: TextStyle(fontSize: 48, fontWeight: FontWeight.w900, color: _textColor)),
+                const SizedBox(height: 4),
+                Text(_status, style: TextStyle(fontSize: 14, color: _subtextColor)),
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(color: widget.isDark ? const Color(0xFF2D2D44) : Colors.white, borderRadius: BorderRadius.circular(20)),
+                  child: Text("Goal: 100", style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: _subtextColor)),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 16),
+
+          // Daily goal progress
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: _cardColor,
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: [BoxShadow(color: _accentColor.withAlpha(20), blurRadius: 20, offset: const Offset(0, 8))],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.emoji_events, size: 20, color: _accentColor),
+                        const SizedBox(width: 8),
+                        Text("Daily Goal", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: _textColor)),
+                      ],
+                    ),
+                    Text("$_totalReps/100", style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: _textColor)),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: LinearProgressIndicator(
+                    value: (_totalReps / 100).clamp(0.0, 1.0),
+                    backgroundColor: widget.isDark ? const Color(0xFF2D2D44) : Colors.white,
+                    valueColor: AlwaysStoppedAnimation(_totalReps >= 100 ? const Color(0xFF4CAF50) : _accentColor),
+                    minHeight: 8,
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 16),
+
+          // +1 button
+          if (_isCameraInitialized)
+            SizedBox(
+              width: double.infinity, height: 60,
+              child: ElevatedButton(
+                onPressed: _addManualRep,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _accentColor,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                  elevation: 0,
+                ),
+                child: const Text("+1 Rep", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+              ),
+            ),
+
+          if (_isCameraInitialized) const SizedBox(height: 12),
+
+          // Action buttons
+          Row(
+            children: [
+              if (_isCameraInitialized)
+                Expanded(
+                  child: SizedBox(
+                    height: 52,
+                    child: ElevatedButton(
+                      onPressed: _undoRep,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: widget.isDark ? const Color(0xFF2D2D44) : Colors.white,
+                        foregroundColor: _textColor,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        elevation: 0,
+                      ),
+                      child: const Text("Undo"),
+                    ),
+                  ),
+                ),
+              if (_isCameraInitialized) const SizedBox(width: 10),
+              Expanded(
+                flex: 2,
+                child: SizedBox(
+                  height: 52,
+                  child: ElevatedButton(
+                    onPressed: _isCameraInitialized ? _endSession : _startSession,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _isCameraInitialized ? const Color(0xFFE8534A) : _accentColor,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      elevation: 0,
+                    ),
+                    child: Text(_isCameraInitialized ? "End Session" : "Start AI Counting",
+                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                  ),
+                ),
+              ),
+              if (_isCameraInitialized) const SizedBox(width: 10),
+              if (_isCameraInitialized)
+                Expanded(
+                  child: SizedBox(
+                    height: 52,
+                    child: ElevatedButton(
+                      onPressed: _resetSession,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: widget.isDark ? const Color(0xFF2D2D44) : Colors.white,
+                        foregroundColor: _textColor,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        elevation: 0,
+                      ),
+                      child: const Text("Reset"),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+
+          const SizedBox(height: 16),
+
+          // Debug info
+          if (_isCameraInitialized)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: _cardColor,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text("Debug: $_debugInfo",
+                      style: TextStyle(fontSize: 11, color: _subtextColor, fontFamily: 'monospace')),
+                  Text("Phase: $_phaseLabel | Confirm: $_confirmProgress/${SitupDetector.confirmFrames}",
+                      style: TextStyle(fontSize: 11, color: _subtextColor, fontFamily: 'monospace')),
                 ],
               ),
             ),
+
+          if (_isCameraInitialized) const SizedBox(height: 16),
+
+          // Phone placement guide
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: _cardColor,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.info_outline, size: 18, color: _accentColor),
+                    const SizedBox(width: 8),
+                    Text("Phone Placement", style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: _textColor)),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  "1. Place phone on floor or prop it up on its SIDE\n"
+                  "2. Back camera should see your full body from the side\n"
+                  "3. Make sure your whole body is in the frame\n"
+                  "4. Lie down → sit up → lie back = 1 rep\n"
+                  "5. If AI doesn't count, use the +1 button",
+                  style: TextStyle(fontSize: 12, color: _subtextColor, height: 1.6),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 12),
+        ],
+      ),
+    );
+  }
+
+  Color _getAngleColor() {
+    if (_currentAngle > SitupDetector.lyingAngle) return const Color(0xFFE8534A);
+    if (_currentAngle < SitupDetector.sittingAngle) return const Color(0xFF4CAF50);
+    return const Color(0xFFFFC107);
+  }
+
+  Widget _buildBadge(String text, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.white.withAlpha(220),
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [BoxShadow(color: Colors.black.withAlpha(15), blurRadius: 8)],
+      ),
+      child: Text(text, style: TextStyle(color: color, fontSize: 14, fontWeight: FontWeight.bold)),
+    );
+  }
+
+  Widget _buildStatCard(String value, String label, IconData icon, Color color) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: _cardColor,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [BoxShadow(color: color.withAlpha(15), blurRadius: 15, offset: const Offset(0, 6))],
+        ),
+        child: Column(
+          children: [
+            Icon(icon, color: color, size: 18),
+            const SizedBox(height: 6),
+            Text(value, style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: _textColor)),
+            const SizedBox(height: 2),
+            Text(label, style: TextStyle(fontSize: 11, color: _subtextColor)),
           ],
         ),
       ),
