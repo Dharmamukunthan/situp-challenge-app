@@ -228,10 +228,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
     });
   }
 
-  void _addBattleRep() {
-    setState(() => _battleMyReps++);
-  }
-
   void _endBattle() {
     _battleTimer?.cancel();
     _pollTimer?.cancel();
@@ -565,22 +561,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 20),
-                  // Manual +1 Rep button during battle
-                  SizedBox(
-                    width: double.infinity,
-                    height: 60,
-                    child: ElevatedButton(
-                      onPressed: _addBattleRep,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: _accentColor,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-                        elevation: 0,
-                      ),
-                      child: const Text("+1 Rep", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-                    ),
-                  ),
+
                 ],
               ),
             ),
