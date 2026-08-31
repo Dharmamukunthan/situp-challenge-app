@@ -20,9 +20,6 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
   static const Color _textColor = Color(0xFF3D2C2C);
   static const Color _subtextColor = Color(0xFF9C8A8A);
 
-  // Convex HTTP API endpoint
-  static const String _convexUrl = 'https://graceful-mink-900.convex.site';
-
   @override
   void initState() {
     super.initState();
@@ -32,25 +29,35 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
   Future<void> _loadRankings() async {
     setState(() => _isLoading = true);
     try {
+      // Use the correct Convex query path and args
+      final queryPath = _isToday ? 'situpLogs:getLeaderboard' : 'situpLogs:getOverallLeaderboard';
+
       final response = await http.post(
-        Uri.parse('$_convexUrl/api/query'),
+        Uri.parse('https://graceful-mink-900.convex.site/api/query'),
         headers: {'Content-Type': 'application/json'},
         body: json.encode({
-          'path': 'situpLogs:getLeaderboard',
-          'args': {'isToday': _isToday},
+          'path': queryPath,
+          'args': {},
         }),
       );
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
+        // data['result'] is the actual leaderboard array
         final result = data['result'];
         setState(() {
-          _rankings = result is List ? List<Map<String, dynamic>>.from(result) : [];
+          if (result is List) {
+            _rankings = List<Map<String, dynamic>>.from(
+              result.map((item) => Map<String, dynamic>.from(item)),
+            );
+          } else {
+            _rankings = [];
+          }
           _isLoading = false;
         });
       } else {
         setState(() { _isLoading = false; });
       }
-    } catch (_) {
+    } catch (e) {
       setState(() { _isLoading = false; });
     }
   }
@@ -131,7 +138,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                 children: [
                   Icon(Icons.emoji_events, size: 48, color: _subtextColor),
                   const SizedBox(height: 16),
-                  Text("No sessions logged today.", style: TextStyle(fontSize: 16, color: _textColor, fontWeight: FontWeight.w600)),
+                  Text("No sessions logged yet.", style: TextStyle(fontSize: 16, color: _textColor, fontWeight: FontWeight.w600)),
                   const SizedBox(height: 4),
                   Text("Be the first!", style: TextStyle(fontSize: 14, color: _subtextColor)),
                 ],
@@ -141,6 +148,10 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
             ...List.generate(_rankings.length, (index) {
               final rank = _rankings[index];
               final medals = ['🥇', '🥈', '🥉'];
+              // API returns 'userName' or 'total' for overall, 'username' or 'count' for today
+              final displayName = rank['userName'] ?? rank['username'] ?? 'Unknown';
+              final displayCount = rank['total'] ?? rank['count'] ?? 0;
+
               return Container(
                 margin: const EdgeInsets.only(bottom: 12),
                 padding: const EdgeInsets.all(16),
@@ -158,9 +169,9 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(rank['username'] ?? 'Unknown',
+                          Text(displayName,
                               style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: _textColor)),
-                          Text("${rank['count'] ?? 0} reps",
+                          Text("$displayCount reps",
                               style: TextStyle(fontSize: 13, color: _subtextColor)),
                         ],
                       ),

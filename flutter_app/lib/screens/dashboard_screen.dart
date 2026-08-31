@@ -43,6 +43,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     super.dispose();
   }
 
+  // --- RANDOM MATCH ---
   void _startRandomMatch() async {
     setState(() => _isSearching = true);
 
@@ -51,9 +52,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
         Uri.parse('https://graceful-mink-900.convex.site/api/mutation'),
         headers: {'Content-Type': 'application/json'},
         body: json.encode({
-          'path': 'battles:createBattle',
+          'path': 'matchmaking:findMatch',
           'args': {
-            'playerName': widget.username,
+            'userId': widget.username, // using username as userId
+            'username': widget.username,
             'duration': _selectedDuration,
           }
         }),
@@ -61,18 +63,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
-        final battleId = data['result'] ?? '';
+        final result = data['result'];
 
-        setState(() {
-          _battleId = battleId;
-          _isSearching = true;
-        });
-
-        // Poll for opponent
-        _pollForOpponent(battleId);
+        if (result != null && result is String) {
+          // Immediately matched — battleId returned
+          setState(() => _battleId = result);
+          _fetchBattleAndStart(result);
+        } else {
+          // Queued — poll matchmaking for match
+          setState(() => _isSearching = true);
+          _pollForMatch();
+        }
       } else {
         setState(() => _isSearching = false);
-        _showSnackBar("Failed to create battle");
+        _showSnackBar("Failed to find match");
       }
     } catch (_) {
       setState(() => _isSearching = false);
@@ -80,13 +84,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
   }
 
-  void _pollForOpponent(String battleId) {
+  void _pollForMatch() {
     _pollTimer?.cancel();
     int attempts = 0;
 
-    _pollTimer = Timer.periodic(const Duration(seconds: 3), (timer) async {
+    _pollTimer = Timer.periodic(const Duration(seconds: 2), (timer) async {
       attempts++;
-      if (attempts > 60) { // 3 minutes timeout
+      if (attempts > 90) { // 3 minutes timeout
         timer.cancel();
         setState(() => _isSearching = false);
         _showSnackBar("No opponent found. Try again.");
@@ -98,22 +102,55 @@ class _DashboardScreenState extends State<DashboardScreen> {
           Uri.parse('https://graceful-mink-900.convex.site/api/query'),
           headers: {'Content-Type': 'application/json'},
           body: json.encode({
-            'path': 'battles:getBattle',
-            'args': {'battleId': battleId},
+            'path': 'matchmaking:getMyMatch',
+            'args': {'userId': widget.username},
           }),
         );
 
         if (response.statusCode == 200) {
           final data = json.decode(response.body);
-          final battle = data['result'];
+          final result = data['result'];
 
-          if (battle != null && battle['status'] == 'active') {
+          if (result != null && result is Map && result['battleId'] != null) {
             timer.cancel();
-            _startBattle(battle['opponentName'] ?? 'Opponent', battle['duration'] ?? _selectedDuration);
+            final battleId = result['battleId'] as String;
+            setState(() => _battleId = battleId);
+            _fetchBattleAndStart(battleId);
           }
         }
       } catch (_) {}
     });
+  }
+
+  void _fetchBattleAndStart(String battleId) async {
+    try {
+      final response = await http.post(
+        Uri.parse('https://graceful-mink-900.convex.site/api/query'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({
+          'path': 'battles:getBattle',
+          'args': {'battleId': battleId},
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final battle = data['result'];
+
+        if (battle != null && battle is Map) {
+          final opponentName = battle['creatorId'] == widget.username
+              ? (battle['opponentId'] ?? 'Opponent')
+              : (battle['creatorId'] ?? 'Opponent');
+          final duration = battle['duration'] ?? _selectedDuration;
+
+          _startBattle(opponentName, duration);
+          return;
+        }
+      }
+    } catch (_) {}
+
+    // Fallback — start with defaults
+    _startBattle("Opponent", _selectedDuration);
   }
 
   void _startBattle(String opponent, int duration) {
@@ -135,6 +172,64 @@ class _DashboardScreenState extends State<DashboardScreen> {
         }
       });
     });
+
+    // Poll opponent score every 3 seconds
+    _startOpponentScorePolling();
+  }
+
+  void _startOpponentScorePolling() {
+    _pollTimer?.cancel();
+    _pollTimer = Timer.periodic(const Duration(seconds: 3), (timer) async {
+      if (!_inBattle || _battleId == null) {
+        timer.cancel();
+        return;
+      }
+
+      try {
+        final response = await http.post(
+          Uri.parse('https://graceful-mink-900.convex.site/api/query'),
+          headers: {'Content-Type': 'application/json'},
+          body: json.encode({
+            'path': 'battles:getBattle',
+            'args': {'battleId': _battleId!},
+          }),
+        );
+
+        if (response.statusCode == 200) {
+          final data = json.decode(response.body);
+          final battle = data['result'];
+
+          if (battle != null && battle is Map && mounted) {
+            setState(() {
+              // Get opponent's score
+              if (battle['creatorId'] == widget.username) {
+                _battleOpponentReps = battle['opponentScore'] ?? 0;
+              } else {
+                _battleOpponentReps = battle['creatorScore'] ?? 0;
+              }
+            });
+
+            // Also update our score on the server
+            await http.post(
+              Uri.parse('https://graceful-mink-900.convex.site/api/mutation'),
+              headers: {'Content-Type': 'application/json'},
+              body: json.encode({
+                'path': 'battles:updateScore',
+                'args': {
+                  'battleId': _battleId!,
+                  'userId': widget.username,
+                  'score': _battleMyReps,
+                },
+              }),
+            );
+          }
+        }
+      } catch (_) {}
+    });
+  }
+
+  void _addBattleRep() {
+    setState(() => _battleMyReps++);
   }
 
   void _endBattle() {
@@ -156,6 +251,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
 
     setState(() => _inBattle = false);
+
+    // End the battle on server
+    if (_battleId != null) {
+      http.post(
+        Uri.parse('https://graceful-mink-900.convex.site/api/mutation'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({
+          'path': 'battles:endBattle',
+          'args': {'battleId': _battleId!},
+        }),
+      ).catchError((_) {});
+    }
 
     showDialog(
       context: context,
@@ -347,7 +454,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         Container(
                           padding: const EdgeInsets.all(10),
                           decoration: BoxDecoration(color: _accentColor.withAlpha(30), shape: BoxShape.circle),
-                          child: Icon(Icons.language, color: _accentColor, size: 22),
+                          child: _isSearching
+                              ? SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2, color: _accentColor))
+                              : Icon(Icons.language, color: _accentColor, size: 22),
                         ),
                         const SizedBox(width: 16),
                         Expanded(
@@ -360,10 +469,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             ],
                           ),
                         ),
-                        if (_isSearching)
-                          SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: _accentColor))
-                        else
-                          Icon(Icons.chevron_right, color: _accentColor),
+                        if (!_isSearching) Icon(Icons.chevron_right, color: _accentColor),
                       ],
                     ),
                   ),
@@ -423,7 +529,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // Timer
             Container(
               padding: const EdgeInsets.all(24),
               decoration: BoxDecoration(
@@ -460,6 +565,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       ),
                     ],
                   ),
+                  const SizedBox(height: 20),
+                  // Manual +1 Rep button during battle
+                  SizedBox(
+                    width: double.infinity,
+                    height: 60,
+                    child: ElevatedButton(
+                      onPressed: _addBattleRep,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _accentColor,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                        elevation: 0,
+                      ),
+                      child: const Text("+1 Rep", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -469,4 +590,3 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 }
-
