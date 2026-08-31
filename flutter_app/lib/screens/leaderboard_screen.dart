@@ -3,7 +3,8 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 class LeaderboardScreen extends StatefulWidget {
-  const LeaderboardScreen({super.key});
+  final bool isDark;
+  const LeaderboardScreen({super.key, this.isDark = false});
 
   @override
   State<LeaderboardScreen> createState() => _LeaderboardScreenState();
@@ -14,11 +15,23 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
   List<Map<String, dynamic>> _rankings = [];
   bool _isLoading = true;
 
-  static const Color _bgColor = Color(0xFFFDF5F0);
-  static const Color _cardColor = Color(0xFFFFF0E8);
+  // Light colors
+  static const Color _lightBg = Color(0xFFFDF5F0);
+  static const Color _lightCard = Color(0xFFFFF0E8);
+  static const Color _lightText = Color(0xFF3D2C2C);
+  static const Color _lightSubtext = Color(0xFF9C8A8A);
   static const Color _accentColor = Color(0xFFE8734A);
-  static const Color _textColor = Color(0xFF3D2C2C);
-  static const Color _subtextColor = Color(0xFF9C8A8A);
+
+  // Dark colors
+  static const Color _darkBg = Color(0xFF1A1A2E);
+  static const Color _darkCard = Color(0xFF252540);
+  static const Color _darkText = Color(0xFFF5F5F5);
+  static const Color _darkSubtext = Color(0xFF9CA3AF);
+
+  Color get _bgColor => widget.isDark ? _darkBg : _lightBg;
+  Color get _cardColor => widget.isDark ? _darkCard : _lightCard;
+  Color get _textColor => widget.isDark ? _darkText : _lightText;
+  Color get _subtextColor => widget.isDark ? _darkSubtext : _lightSubtext;
 
   @override
   void initState() {

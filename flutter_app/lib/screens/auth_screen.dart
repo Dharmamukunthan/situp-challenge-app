@@ -2,9 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class AuthScreen extends StatefulWidget {
-  final Function(String username) onAuth;
+  final bool isDark;
+  final VoidCallback onToggleTheme;
+  final Function(String) onAuth;
 
-  const AuthScreen({super.key, required this.onAuth});
+  const AuthScreen({
+    super.key,
+    required this.isDark,
+    required this.onToggleTheme,
+    required this.onAuth,
+  });
 
   @override
   State<AuthScreen> createState() => _AuthScreenState();
@@ -13,122 +20,204 @@ class AuthScreen extends StatefulWidget {
 class _AuthScreenState extends State<AuthScreen> {
   final _controller = TextEditingController();
   bool _isLoading = false;
-  String? _error;
 
-  static const Color _bgColor = Color(0xFFFDF5F0);
-  static const Color _cardColor = Color(0xFFFFF0E8);
-  static const Color _accentColor = Color(0xFFE8734A);
-  static const Color _textColor = Color(0xFF3D2C2C);
-  static const Color _subtextColor = Color(0xFF9C8A8A);
+  // Light colors
+  static const Color _lightBg = Color(0xFFFDF5F0);
+  static const Color _lightCard = Color(0xFFFFF0E8);
+  static const Color _lightText = Color(0xFF3D2C2C);
+  static const Color _lightSubtext = Color(0xFF9C8A8A);
+  static const Color _accent = Color(0xFFE8734A);
 
-  Future<void> _signIn() async {
+  // Dark colors
+  static const Color _darkBg = Color(0xFF1A1A2E);
+  static const Color _darkCard = Color(0xFF252540);
+  static const Color _darkText = Color(0xFFF5F5F5);
+  static const Color _darkSubtext = Color(0xFF9CA3AF);
+
+  Color get _bg => widget.isDark ? _darkBg : _lightBg;
+  Color get _card => widget.isDark ? _darkCard : _lightCard;
+  Color get _text => widget.isDark ? _darkText : _lightText;
+  Color get _subtext => widget.isDark ? _darkSubtext : _lightSubtext;
+
+  void _submit() async {
     final username = _controller.text.trim();
     if (username.isEmpty) {
-      setState(() => _error = "Please enter a username");
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: const Text('Please enter a username')),
+      );
       return;
     }
 
-    setState(() { _isLoading = true; _error = null; });
+    setState(() => _isLoading = true);
 
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('situp-username', username);
-      widget.onAuth(username);
-    } catch (_) {
-      setState(() { _error = "Failed to save username"; _isLoading = false; });
-    }
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('situp-username', username);
+
+    widget.onAuth(username);
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: _bgColor,
-      body: Center(
+      backgroundColor: _bg,
+      body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(32),
-            decoration: BoxDecoration(
-              color: _cardColor,
-              borderRadius: BorderRadius.circular(28),
-              boxShadow: [
-                BoxShadow(
-                  color: _accentColor.withAlpha(20),
-                  blurRadius: 30,
-                  offset: const Offset(0, 12),
-                ),
-              ],
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(18),
-                  decoration: BoxDecoration(
-                    color: _accentColor.withAlpha(30),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(Icons.shield, color: _accentColor, size: 36),
-                ),
+          padding: const EdgeInsets.symmetric(horizontal: 32),
+          child: Column(
+            children: [
+              const SizedBox(height: 40),
 
-                const SizedBox(height: 24),
-
-                Text("Situp Challenge",
-                    style: TextStyle(fontSize: 28, fontWeight: FontWeight.w900, color: _textColor)),
-
-                const SizedBox(height: 8),
-
-                Text("Count situps with precision.",
-                    style: TextStyle(fontSize: 16, color: _subtextColor)),
-
-                const SizedBox(height: 32),
-
-                TextField(
-                  controller: _controller,
-                  decoration: InputDecoration(
-                    hintText: "Enter username",
-                    hintStyle: TextStyle(color: _subtextColor),
-                    filled: true,
-                    fillColor: Colors.white,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(16),
-                      borderSide: BorderSide.none,
+              // Theme toggle
+              Align(
+                alignment: Alignment.topRight,
+                child: GestureDetector(
+                  onTap: widget.onToggleTheme,
+                  child: Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: _card,
+                      shape: BoxShape.circle,
                     ),
-                    prefixIcon: Icon(Icons.person, color: _accentColor),
-                  ),
-                  style: TextStyle(color: _textColor, fontSize: 16),
-                  onSubmitted: (_) => _signIn(),
-                ),
-
-                if (_error != null) ...[
-                  const SizedBox(height: 12),
-                  Text(_error!, style: TextStyle(color: Colors.red, fontSize: 14)),
-                ],
-
-                const SizedBox(height: 24),
-
-                SizedBox(
-                  width: double.infinity, height: 56,
-                  child: ElevatedButton(
-                    onPressed: _isLoading ? null : _signIn,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: _accentColor,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-                      elevation: 0,
+                    child: Icon(
+                      widget.isDark ? Icons.light_mode : Icons.dark_mode,
+                      color: _accent,
+                      size: 22,
                     ),
-                    child: _isLoading
-                        ? const SizedBox(
-                            width: 24, height: 24,
-                            child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-                          )
-                        : const Text("Get Started",
-                            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                   ),
                 ),
-              ],
-            ),
+              ),
+
+              const SizedBox(height: 20),
+
+              // Logo
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: _accent.withAlpha(30),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(Icons.shield, color: _accent, size: 40),
+              ),
+
+              const SizedBox(height: 24),
+
+              // Title
+              Text(
+                "Situp Challenge",
+                style: TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.bold,
+                  color: _text,
+                ),
+              ),
+
+              const SizedBox(height: 8),
+
+              Text(
+                "Track your reps. Compete with friends.",
+                style: TextStyle(fontSize: 15, color: _subtext),
+              ),
+
+              const SizedBox(height: 48),
+
+              // Username input
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: _card,
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [
+                    BoxShadow(
+                      color: _accent.withAlpha(20),
+                      blurRadius: 20,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      "Enter your username",
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: _text,
+                      ),
+                    ),
+
+                    const SizedBox(height: 4),
+
+                    Text(
+                      "This will be shown on the leaderboard",
+                      style: TextStyle(fontSize: 13, color: _subtext),
+                    ),
+
+                    const SizedBox(height: 16),
+
+                    TextField(
+                      controller: _controller,
+                      style: TextStyle(color: _text, fontSize: 16),
+                      decoration: InputDecoration(
+                        hintText: "e.g. situpmaster",
+                        hintStyle: TextStyle(color: _subtext),
+                        filled: true,
+                        fillColor: widget.isDark ? const Color(0xFF2D2D44) : Colors.white,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: BorderSide.none,
+                        ),
+                        prefixIcon: Icon(Icons.person, color: _accent),
+                      ),
+                      onSubmitted: (_) => _submit(),
+                    ),
+
+                    const SizedBox(height: 16),
+
+                    // Submit button
+                    GestureDetector(
+                      onTap: _isLoading ? null : _submit,
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: _accent,
+                          borderRadius: BorderRadius.circular(14),
+                          boxShadow: [
+                            BoxShadow(
+                              color: _accent.withAlpha(60),
+                              blurRadius: 12,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: Center(
+                          child: _isLoading
+                              ? const SizedBox(
+                                  width: 22,
+                                  height: 22,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              : const Text(
+                                  "Get Started",
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 32),
+            ],
           ),
         ),
       ),

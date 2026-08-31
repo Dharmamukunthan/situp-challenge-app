@@ -7,9 +7,17 @@ import 'leaderboard_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   final String username;
+  final bool isDark;
+  final VoidCallback onToggleTheme;
   final VoidCallback onSignOut;
 
-  const DashboardScreen({super.key, required this.username, required this.onSignOut});
+  const DashboardScreen({
+    super.key,
+    required this.username,
+    required this.isDark,
+    required this.onToggleTheme,
+    required this.onSignOut,
+  });
 
   @override
   State<DashboardScreen> createState() => _DashboardScreenState();
@@ -29,12 +37,25 @@ class _DashboardScreenState extends State<DashboardScreen> {
   int _battleOpponentReps = 0;
   Timer? _battleTimer;
   Timer? _pollTimer;
+  String _searchStatus = "";
 
-  static const Color _bgColor = Color(0xFFFDF5F0);
-  static const Color _cardColor = Color(0xFFFFF0E8);
-  static const Color _accentColor = Color(0xFFE8734A);
-  static const Color _textColor = Color(0xFF3D2C2C);
-  static const Color _subtextColor = Color(0xFF9C8A8A);
+  // Light colors
+  static const Color _lightBg = Color(0xFFFDF5F0);
+  static const Color _lightCard = Color(0xFFFFF0E8);
+  static const Color _lightText = Color(0xFF3D2C2C);
+  static const Color _lightSubtext = Color(0xFF9C8A8A);
+  static const Color _accent = Color(0xFFE8734A);
+
+  // Dark colors
+  static const Color _darkBg = Color(0xFF1A1A2E);
+  static const Color _darkCard = Color(0xFF252540);
+  static const Color _darkText = Color(0xFFF5F5F5);
+  static const Color _darkSubtext = Color(0xFF9CA3AF);
+
+  Color get _bg => widget.isDark ? _darkBg : _lightBg;
+  Color get _card => widget.isDark ? _darkCard : _lightCard;
+  Color get _text => widget.isDark ? _darkText : _lightText;
+  Color get _subtext => widget.isDark ? _darkSubtext : _lightSubtext;
 
   @override
   void dispose() {
@@ -45,7 +66,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   // --- RANDOM MATCH ---
   void _startRandomMatch() async {
-    setState(() => _isSearching = true);
+    setState(() {
+      _isSearching = true;
+      _searchStatus = "Searching for opponent...";
+    });
 
     try {
       final response = await http.post(
@@ -54,7 +78,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         body: json.encode({
           'path': 'matchmaking:findMatch',
           'args': {
-            'userId': widget.username, // using username as userId
+            'userId': widget.username,
             'username': widget.username,
             'duration': _selectedDuration,
           }
@@ -66,12 +90,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
         final result = data['result'];
 
         if (result != null && result is String) {
-          // Immediately matched — battleId returned
           setState(() => _battleId = result);
           _fetchBattleAndStart(result);
         } else {
-          // Queued — poll matchmaking for match
-          setState(() => _isSearching = true);
           _pollForMatch();
         }
       } else {
@@ -90,9 +111,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     _pollTimer = Timer.periodic(const Duration(seconds: 2), (timer) async {
       attempts++;
-      if (attempts > 90) { // 3 minutes timeout
+
+      if (mounted) {
+        setState(() {
+          _searchStatus = "Searching for opponent... ($attempts)";
+        });
+      }
+
+      if (attempts > 90) {
         timer.cancel();
-        setState(() => _isSearching = false);
+        if (mounted) setState(() => _isSearching = false);
         _showSnackBar("No opponent found. Try again.");
         return;
       }
@@ -149,7 +177,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
       }
     } catch (_) {}
 
-    // Fallback — start with defaults
     _startBattle("Opponent", _selectedDuration);
   }
 
@@ -173,7 +200,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
       });
     });
 
-    // Poll opponent score every 3 seconds
     _startOpponentScorePolling();
   }
 
@@ -201,7 +227,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
           if (battle != null && battle is Map && mounted) {
             setState(() {
-              // Get opponent's score
               if (battle['creatorId'] == widget.username) {
                 _battleOpponentReps = battle['opponentScore'] ?? 0;
               } else {
@@ -209,7 +234,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
               }
             });
 
-            // Also update our score on the server
             await http.post(
               Uri.parse('https://graceful-mink-900.convex.site/api/mutation'),
               headers: {'Content-Type': 'application/json'},
@@ -248,7 +272,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     setState(() => _inBattle = false);
 
-    // End the battle on server
     if (_battleId != null) {
       http.post(
         Uri.parse('https://graceful-mink-900.convex.site/api/mutation'),
@@ -264,18 +287,21 @@ class _DashboardScreenState extends State<DashboardScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        title: Text(resultText, textAlign: TextAlign.center),
+        backgroundColor: _card,
+        title: Text(resultText, textAlign: TextAlign.center, style: TextStyle(color: _text)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text("You: $myScore reps", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: _accentColor)),
-            Text("$_opponentName: $oppScore reps", style: TextStyle(fontSize: 18, color: _subtextColor)),
+            Text("You: $myScore reps",
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: _accent)),
+            Text("$_opponentName: $oppScore reps",
+                style: TextStyle(fontSize: 18, color: _subtext)),
           ],
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: Text("OK", style: TextStyle(color: _accentColor)),
+            child: Text("OK", style: TextStyle(color: _accent)),
           ),
         ],
       ),
@@ -289,53 +315,114 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   Widget build(BuildContext context) {
     final screens = [
-      SitupCounterScreen(onSessionEnd: (reps) {}),
+      SitupCounterScreen(
+        isDark: widget.isDark,
+        onSessionEnd: (reps) {},
+      ),
       _buildBattlesScreen(),
-      const LeaderboardScreen(),
+      LeaderboardScreen(isDark: widget.isDark),
     ];
 
     return Scaffold(
-      backgroundColor: _bgColor,
+      backgroundColor: _bg,
       body: Column(
         children: [
+          // Header
           Container(
             padding: const EdgeInsets.fromLTRB(20, 50, 20, 16),
             decoration: BoxDecoration(
-              color: _cardColor,
-              borderRadius: const BorderRadius.only(bottomLeft: Radius.circular(28), bottomRight: Radius.circular(28)),
-              boxShadow: [BoxShadow(color: _accentColor.withAlpha(15), blurRadius: 20, offset: const Offset(0, 6))],
+              color: _card,
+              borderRadius: const BorderRadius.only(
+                bottomLeft: Radius.circular(28),
+                bottomRight: Radius.circular(28),
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: _accent.withAlpha(15),
+                  blurRadius: 20,
+                  offset: const Offset(0, 6),
+                ),
+              ],
             ),
             child: Row(
               children: [
                 Container(
                   padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(color: _accentColor.withAlpha(30), shape: BoxShape.circle),
-                  child: Icon(Icons.shield, color: _accentColor, size: 22),
+                  decoration: BoxDecoration(
+                    color: _accent.withAlpha(30),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(Icons.shield, color: _accent, size: 22),
                 ),
                 const SizedBox(width: 12),
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text("Situp Challenge", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: _textColor)),
-                    Text(widget.username, style: TextStyle(fontSize: 13, color: _subtextColor)),
+                    Text(
+                      "Situp Challenge",
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: _text,
+                      ),
+                    ),
+                    Text(
+                      widget.username,
+                      style: TextStyle(fontSize: 13, color: _subtext),
+                    ),
                   ],
                 ),
                 const Spacer(),
-                IconButton(
-                  onPressed: widget.onSignOut,
-                  icon: Icon(Icons.logout, color: _subtextColor, size: 22),
+                // Theme toggle
+                GestureDetector(
+                  onTap: widget.onToggleTheme,
+                  child: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: _accent.withAlpha(20),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      widget.isDark ? Icons.light_mode : Icons.dark_mode,
+                      color: _accent,
+                      size: 20,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                // Sign out
+                GestureDetector(
+                  onTap: widget.onSignOut,
+                  child: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: _accent.withAlpha(20),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(Icons.logout, color: _accent, size: 20),
+                  ),
                 ),
               ],
             ),
           ),
+
+          // Content
           Expanded(child: screens[_currentIndex]),
+
+          // Bottom nav
           Container(
             margin: const EdgeInsets.fromLTRB(20, 0, 20, 20),
             padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
             decoration: BoxDecoration(
-              color: _cardColor,
+              color: _card,
               borderRadius: BorderRadius.circular(24),
-              boxShadow: [BoxShadow(color: _accentColor.withAlpha(20), blurRadius: 20, offset: const Offset(0, 8))],
+              boxShadow: [
+                BoxShadow(
+                  color: _accent.withAlpha(20),
+                  blurRadius: 20,
+                  offset: const Offset(0, 8),
+                ),
+              ],
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
@@ -357,14 +444,30 @@ class _DashboardScreenState extends State<DashboardScreen> {
       onTap: () => setState(() => _currentIndex = index),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        decoration: isSelected ? BoxDecoration(color: _accentColor.withAlpha(30), borderRadius: BorderRadius.circular(16)) : null,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: isSelected
+            ? BoxDecoration(
+                color: _accent.withAlpha(30),
+                borderRadius: BorderRadius.circular(16),
+              )
+            : null,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, color: isSelected ? _accentColor : _subtextColor, size: 22),
+            Icon(
+              icon,
+              color: isSelected ? _accent : _subtext,
+              size: 22,
+            ),
             const SizedBox(height: 4),
-            Text(label, style: TextStyle(fontSize: 11, fontWeight: isSelected ? FontWeight.bold : FontWeight.normal, color: isSelected ? _accentColor : _subtextColor)),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                color: isSelected ? _accent : _subtext,
+              ),
+            ),
           ],
         ),
       ),
@@ -376,16 +479,25 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return Expanded(
       child: GestureDetector(
         onTap: () => setState(() => _selectedDuration = seconds),
-        child: Container(
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
           padding: const EdgeInsets.symmetric(vertical: 14),
           decoration: BoxDecoration(
-            color: isSelected ? _accentColor : Colors.white,
+            color: isSelected ? _accent : (widget.isDark ? const Color(0xFF2D2D44) : Colors.white),
             borderRadius: BorderRadius.circular(16),
-            boxShadow: isSelected ? [BoxShadow(color: _accentColor.withAlpha(40), blurRadius: 10)] : [],
+            boxShadow: isSelected
+                ? [BoxShadow(color: _accent.withAlpha(40), blurRadius: 10)]
+                : [],
           ),
           child: Center(
-            child: Text(label,
-                style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: isSelected ? Colors.white : _textColor)),
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.bold,
+                color: isSelected ? Colors.white : _text,
+              ),
+            ),
           ),
         ),
       ),
@@ -399,28 +511,58 @@ class _DashboardScreenState extends State<DashboardScreen> {
       padding: const EdgeInsets.all(20),
       child: Column(
         children: [
+          // Main battle card
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(24),
             decoration: BoxDecoration(
-              color: _cardColor,
+              color: _card,
               borderRadius: BorderRadius.circular(24),
-              boxShadow: [BoxShadow(color: _accentColor.withAlpha(20), blurRadius: 20, offset: const Offset(0, 8))],
+              boxShadow: [
+                BoxShadow(
+                  color: _accent.withAlpha(20),
+                  blurRadius: 20,
+                  offset: const Offset(0, 8),
+                ),
+              ],
             ),
             child: Column(
               children: [
+                // Title
                 Container(
                   padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(color: _accentColor.withAlpha(30), shape: BoxShape.circle),
-                  child: Icon(Icons.flash_on, color: _accentColor, size: 28),
+                  decoration: BoxDecoration(
+                    color: _accent.withAlpha(30),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(Icons.flash_on, color: _accent, size: 28),
                 ),
                 const SizedBox(height: 16),
-                Text("Head-to-Head", style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: _textColor)),
+                Text(
+                  "Head-to-Head",
+                  style: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                    color: _text,
+                  ),
+                ),
                 const SizedBox(height: 8),
-                Text("Choose how you want to compete.", style: TextStyle(fontSize: 14, color: _subtextColor)),
+                Text(
+                  "Choose how you want to compete.",
+                  style: TextStyle(fontSize: 14, color: _subtext),
+                ),
+
                 const SizedBox(height: 24),
 
-                Text("Select Duration", style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: _textColor)),
+                // Duration selector
+                Text(
+                  "Select Duration",
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: _text,
+                  ),
+                ),
                 const SizedBox(height: 12),
                 Row(
                   children: [
@@ -434,83 +576,94 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
                 const SizedBox(height: 24),
 
-                // Random Match
-                GestureDetector(
+                // Random Match button
+                _buildBattleOption(
+                  icon: Icons.language,
+                  title: "Random Match",
+                  subtitle: _isSearching ? _searchStatus : "Compete against a random online player",
+                  color: _accent,
+                  isSearching: _isSearching,
                   onTap: _isSearching ? null : _startRandomMatch,
-                  child: Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(18),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: _accentColor.withAlpha(40), width: 2),
-                    ),
-                    child: Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(10),
-                          decoration: BoxDecoration(color: _accentColor.withAlpha(30), shape: BoxShape.circle),
-                          child: _isSearching
-                              ? SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2, color: _accentColor))
-                              : Icon(Icons.language, color: _accentColor, size: 22),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text("Random Match", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: _textColor)),
-                              Text(_isSearching ? "Searching for opponent..." : "Compete against a random online player",
-                                  style: TextStyle(fontSize: 13, color: _subtextColor)),
-                            ],
-                          ),
-                        ),
-                        if (!_isSearching) Icon(Icons.chevron_right, color: _accentColor),
-                      ],
-                    ),
-                  ),
                 ),
 
                 const SizedBox(height: 14),
 
-                // Private Room
-                GestureDetector(
+                // Private Room button
+                _buildBattleOption(
+                  icon: Icons.lock,
+                  title: "Private Room",
+                  subtitle: "Create a room and invite friends with a code",
+                  color: const Color(0xFF4CAF50),
                   onTap: () => _showSnackBar("Private rooms coming soon!"),
-                  child: Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(18),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: const Color(0xFF4CAF50).withAlpha(40), width: 2),
-                    ),
-                    child: Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(10),
-                          decoration: BoxDecoration(color: const Color(0xFF4CAF50).withAlpha(30), shape: BoxShape.circle),
-                          child: Icon(Icons.lock, color: const Color(0xFF4CAF50), size: 22),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text("Private Room", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: _textColor)),
-                              Text("Create a room and invite friends with a code",
-                                  style: TextStyle(fontSize: 13, color: _subtextColor)),
-                            ],
-                          ),
-                        ),
-                        Icon(Icons.chevron_right, color: const Color(0xFF4CAF50)),
-                      ],
-                    ),
-                  ),
                 ),
               ],
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildBattleOption({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required Color color,
+    bool isSearching = false,
+    VoidCallback? onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          color: widget.isDark ? const Color(0xFF2D2D44) : Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: color.withAlpha(40), width: 2),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: color.withAlpha(30),
+                shape: BoxShape.circle,
+              ),
+              child: isSearching
+                  ? SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: color,
+                      ),
+                    )
+                  : Icon(icon, color: color, size: 22),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: _text,
+                    ),
+                  ),
+                  Text(
+                    subtitle,
+                    style: TextStyle(fontSize: 13, color: _subtext),
+                  ),
+                ],
+              ),
+            ),
+            if (!isSearching) Icon(Icons.chevron_right, color: color),
+          ],
+        ),
       ),
     );
   }
@@ -528,40 +681,94 @@ class _DashboardScreenState extends State<DashboardScreen> {
             Container(
               padding: const EdgeInsets.all(24),
               decoration: BoxDecoration(
-                color: _cardColor,
+                color: _card,
                 borderRadius: BorderRadius.circular(28),
-                boxShadow: [BoxShadow(color: _accentColor.withAlpha(20), blurRadius: 20, offset: const Offset(0, 8))],
+                boxShadow: [
+                  BoxShadow(
+                    color: _accent.withAlpha(20),
+                    blurRadius: 20,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
               ),
               child: Column(
                 children: [
-                  Text("⚔️ BATTLE IN PROGRESS", style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: _accentColor)),
+                  Text(
+                    "⚔️ BATTLE IN PROGRESS",
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: _accent,
+                    ),
+                  ),
                   const SizedBox(height: 16),
-                  Text("${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}",
-                      style: TextStyle(fontSize: 56, fontWeight: FontWeight.w900, color: _textColor)),
+
+                  // Timer
+                  Text(
+                    "${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}",
+                    style: TextStyle(
+                      fontSize: 56,
+                      fontWeight: FontWeight.w900,
+                      color: _text,
+                    ),
+                  ),
                   const SizedBox(height: 16),
+
+                  // Scores
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceAround,
                     children: [
                       Column(
                         children: [
-                          Text("You", style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: _textColor)),
+                          Text(
+                            "You",
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: _text,
+                            ),
+                          ),
                           const SizedBox(height: 4),
-                          Text("$_battleMyReps", style: TextStyle(fontSize: 36, fontWeight: FontWeight.w900, color: _accentColor)),
-                          Text("reps", style: TextStyle(fontSize: 12, color: _subtextColor)),
+                          Text(
+                            "$_battleMyReps",
+                            style: TextStyle(
+                              fontSize: 36,
+                              fontWeight: FontWeight.w900,
+                              color: _accent,
+                            ),
+                          ),
+                          Text("reps", style: TextStyle(fontSize: 12, color: _subtext)),
                         ],
                       ),
-                      Container(width: 2, height: 60, color: _subtextColor.withAlpha(50)),
+                      Container(
+                        width: 2,
+                        height: 60,
+                        color: _subtext.withAlpha(50),
+                      ),
                       Column(
                         children: [
-                          Text(_opponentName ?? "Opponent", style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: _textColor)),
+                          Text(
+                            _opponentName ?? "Opponent",
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: _text,
+                            ),
+                          ),
                           const SizedBox(height: 4),
-                          Text("$_battleOpponentReps", style: TextStyle(fontSize: 36, fontWeight: FontWeight.w900, color: const Color(0xFF2196F3))),
-                          Text("reps", style: TextStyle(fontSize: 12, color: _subtextColor)),
+                          Text(
+                            "$_battleOpponentReps",
+                            style: const TextStyle(
+                              fontSize: 36,
+                              fontWeight: FontWeight.w900,
+                              color: Color(0xFF2196F3),
+                            ),
+                          ),
+                          Text("reps", style: TextStyle(fontSize: 12, color: _subtext)),
                         ],
                       ),
                     ],
                   ),
-
                 ],
               ),
             ),

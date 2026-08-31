@@ -4,8 +4,9 @@ import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
 import '../utils/pose_utils.dart';
 
 class SitupCounterScreen extends StatefulWidget {
+  final bool isDark;
   final Function(int reps)? onSessionEnd;
-  const SitupCounterScreen({super.key, this.onSessionEnd});
+  const SitupCounterScreen({super.key, this.isDark = false, this.onSessionEnd});
 
   @override
   State<SitupCounterScreen> createState() => _SitupCounterScreenState();
@@ -27,11 +28,23 @@ class _SitupCounterScreenState extends State<SitupCounterScreen> {
   int _rawAngleSamples = 0;
   String _debugInfo = "";
 
-  static const Color _bgColor = Color(0xFFFDF5F0);
-  static const Color _cardColor = Color(0xFFFFF0E8);
+  // Light colors
+  static const Color _lightBg = Color(0xFFFDF5F0);
+  static const Color _lightCard = Color(0xFFFFF0E8);
+  static const Color _lightText = Color(0xFF3D2C2C);
+  static const Color _lightSubtext = Color(0xFF9C8A8A);
   static const Color _accentColor = Color(0xFFE8734A);
-  static const Color _textColor = Color(0xFF3D2C2C);
-  static const Color _subtextColor = Color(0xFF9C8A8A);
+
+  // Dark colors
+  static const Color _darkBg = Color(0xFF1A1A2E);
+  static const Color _darkCard = Color(0xFF252540);
+  static const Color _darkText = Color(0xFFF5F5F5);
+  static const Color _darkSubtext = Color(0xFF9CA3AF);
+
+  Color get _bgColor => widget.isDark ? _darkBg : _lightBg;
+  Color get _cardColor => widget.isDark ? _darkCard : _lightCard;
+  Color get _textColor => widget.isDark ? _darkText : _lightText;
+  Color get _subtextColor => widget.isDark ? _darkSubtext : _lightSubtext;
 
   @override
   void initState() {
@@ -328,7 +341,7 @@ class _SitupCounterScreenState extends State<SitupCounterScreen> {
                             child: Container(
                               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                               decoration: BoxDecoration(
-                                color: Colors.white.withAlpha(220),
+                                color: widget.isDark ? const Color(0xFF2D2D44).withAlpha(230) : Colors.white.withAlpha(220),
                                 borderRadius: BorderRadius.circular(16),
                               ),
                               child: Text(_status,
@@ -392,7 +405,7 @@ class _SitupCounterScreenState extends State<SitupCounterScreen> {
                     const SizedBox(height: 8),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20)),
+                      decoration: BoxDecoration(color: widget.isDark ? const Color(0xFF2D2D44) : Colors.white, borderRadius: BorderRadius.circular(20)),
                       child: Text("Goal: 100", style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: _subtextColor)),
                     ),
                   ],
@@ -431,7 +444,7 @@ class _SitupCounterScreenState extends State<SitupCounterScreen> {
                       borderRadius: BorderRadius.circular(8),
                       child: LinearProgressIndicator(
                         value: (_totalReps / 100).clamp(0.0, 1.0),
-                        backgroundColor: Colors.white,
+                        backgroundColor: widget.isDark ? const Color(0xFF2D2D44) : Colors.white,
                         valueColor: AlwaysStoppedAnimation(_totalReps >= 100 ? const Color(0xFF4CAF50) : _accentColor),
                         minHeight: 8,
                       ),
@@ -470,7 +483,7 @@ class _SitupCounterScreenState extends State<SitupCounterScreen> {
                         child: ElevatedButton(
                           onPressed: _undoRep,
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.white,
+                            backgroundColor: widget.isDark ? const Color(0xFF2D2D44) : Colors.white,
                             foregroundColor: _textColor,
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                             elevation: 0,
@@ -505,7 +518,7 @@ class _SitupCounterScreenState extends State<SitupCounterScreen> {
                         child: ElevatedButton(
                           onPressed: _resetSession,
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.white,
+                            backgroundColor: widget.isDark ? const Color(0xFF2D2D44) : Colors.white,
                             foregroundColor: _textColor,
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                             elevation: 0,
