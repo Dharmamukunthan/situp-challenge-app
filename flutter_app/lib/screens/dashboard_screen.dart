@@ -600,8 +600,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
-                _buildNavItem(0, Icons.camera_alt, "Count"),
-                _buildNavItem(1, Icons.flash_on, "Head-to-Head"),
+                _buildNavItem(0, Icons.fitness_center, "Count"),
+                _buildNavItem(1, Icons.sports_martial_arts, "Head-to-Head"),
                 _buildNavItem(2, Icons.emoji_events, "Leaderboard"),
               ],
             ),
@@ -719,7 +719,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     color: _accent.withAlpha(30),
                     shape: BoxShape.circle,
                   ),
-                  child: Icon(Icons.flash_on, color: _accent, size: 28),
+                  child: Icon(Icons.sports_martial_arts, color: _accent, size: 28),
                 ),
                 const SizedBox(height: 16),
                 Text(
@@ -1297,6 +1297,12 @@ class _CounterTabState extends State<_CounterTab> {
   }
 
   int get _totalReps => _repCount + _manualReps;
+
+  Color _getAngleColor() {
+    if (_currentAngle > SitupDetector.lyingAngle) return const Color(0xFF4CAF50);
+    if (_currentAngle < SitupDetector.sittingAngle) return const Color(0xFF2196F3);
+    return _accentColor;
+  }
 
   @override
   Widget build(BuildContext context) {
