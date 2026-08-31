@@ -4,19 +4,50 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- Purple circle -->
+
+    <!-- Coral circle background -->
+    <path
+        android:fillColor="#E8734A"
+        android:pathData="M54,54 m-42,0 a42,42 0,1 1,84 0 a42,42 0,1 1,-84 0" />
+
+    <!-- Person doing situp - simplified white silhouette -->
+    <!-- Head -->
     <path
         android:fillColor="#FFFFFF"
-        android:pathData="M54,54m-30,0a30,30 0,1 1,60 0a30,30 0,1 1,-60 0"/>
-    <!-- Person icon -->
+        android:pathData="M48,38 m-5,0 a5,5 0,1 1,10 0 a5,5 0,1 1,-10 0" />
+
+    <!-- Body (angled torso showing situp motion) -->
     <path
-        android:fillColor="#6366F1"
-        android:pathData="M48,38a5,5 0,1 1,10 0a5,5 0,1 1,-10 0"/>
+        android:fillColor="#FFFFFF"
+        android:pathData="M48,43 L62,38 L64,41 L50,46 Z" />
+
+    <!-- Front arm reaching toward knees -->
     <path
-        android:fillColor="#6366F1"
-        android:pathData="M46,48 L58,48 L55,65 L49,65 Z"/>
-    <!-- Situp arrow -->
+        android:fillColor="#FFFFFF"
+        android:pathData="M62,38 L74,34 L75,37 L64,41 Z" />
+
+    <!-- Back arm -->
     <path
-        android:fillColor="#6366F1"
-        android:pathData="M62,38 L68,32 L74,38 L71,38 L71,48 L65,48 L65,38 Z"/>
+        android:fillColor="#FFFFFF"
+        android:pathData="M62,38 L66,44 L64,46 L60,40 Z" />
+
+    <!-- Thigh (bent) -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M50,46 L42,58 L45,60 L53,48 Z" />
+
+    <!-- Shin -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M42,58 L36,70 L39,72 L45,60 Z" />
+
+    <!-- Other leg -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M52,48 L60,62 L63,60 L55,48 Z" />
+
+    <!-- Fire emoji accent (small) -->
+    <path
+        android:fillColor="#FFC107"
+        android:pathData="M72,72 C72,72 70,66 72,63 C74,66 76,62 74,58 C78,62 80,68 78,72 C77,74 73,74 72,72 Z" />
 </vector>
