@@ -600,8 +600,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
-                _buildNavItem(0, Icons.fitness_center, "Count"),
-                _buildNavItem(1, Icons.sports_martial_arts, "Head-to-Head"),
+                _buildNavItem(0, Icons.camera_alt, "Count"),
+                _buildNavItem(1, null, "Head-to-Head", emoji: "⚔️"),
                 _buildNavItem(2, Icons.emoji_events, "Leaderboard"),
               ],
             ),
@@ -622,7 +622,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  Widget _buildNavItem(int index, IconData icon, String label) {
+  Widget _buildNavItem(int index, IconData? icon, String label, {String? emoji}) {
     final isSelected = _currentIndex == index;
     return GestureDetector(
       onTap: () => setState(() => _currentIndex = index),
@@ -638,11 +638,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              icon,
-              color: isSelected ? _accent : _subtext,
-              size: 22,
-            ),
+            if (emoji != null)
+              Text(
+                emoji,
+                style: TextStyle(
+                  fontSize: 22,
+                  color: isSelected ? _accent : _subtext,
+                ),
+              )
+            else if (icon != null)
+              Icon(
+                icon,
+                color: isSelected ? _accent : _subtext,
+                size: 22,
+              ),
             const SizedBox(height: 4),
             Text(
               label,
@@ -719,7 +728,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     color: _accent.withAlpha(30),
                     shape: BoxShape.circle,
                   ),
-                  child: Icon(Icons.sports_martial_arts, color: _accent, size: 28),
+                  child: const Text("⚔️", style: TextStyle(fontSize: 28)),
                 ),
                 const SizedBox(height: 16),
                 Text(
