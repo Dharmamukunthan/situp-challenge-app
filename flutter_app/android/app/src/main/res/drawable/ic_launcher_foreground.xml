@@ -5,49 +5,58 @@
     android:viewportWidth="108"
     android:viewportHeight="108">
 
-    <!-- Coral circle background -->
+    <!-- Coral circle background (fills most of the 108dp viewport) -->
     <path
         android:fillColor="#E8734A"
-        android:pathData="M54,54 m-42,0 a42,42 0,1 1,84 0 a42,42 0,1 1,-84 0" />
+        android:pathData="M54,54 m-44,0 a44,44 0,1 1,88 0 a44,44 0,1 1,-88 0" />
 
-    <!-- Person doing situp - simplified white silhouette -->
-    <!-- Head -->
+    <!-- Head (bigger circle, more visible) -->
     <path
         android:fillColor="#FFFFFF"
-        android:pathData="M48,38 m-5,0 a5,5 0,1 1,10 0 a5,5 0,1 1,-10 0" />
+        android:pathData="M46,34 m-6,0 a6,6 0,1 1,12 0 a6,6 0,1 1,-12 0" />
 
-    <!-- Body (angled torso showing situp motion) -->
+    <!-- Torso (thick angled body showing situp motion) -->
     <path
         android:fillColor="#FFFFFF"
-        android:pathData="M48,43 L62,38 L64,41 L50,46 Z" />
+        android:pathData="M46,40 L64,33 L67,37 L49,44 Z" />
 
-    <!-- Front arm reaching toward knees -->
+    <!-- Front arm (thick, reaching forward) -->
     <path
         android:fillColor="#FFFFFF"
-        android:pathData="M62,38 L74,34 L75,37 L64,41 Z" />
+        android:pathData="M64,33 L78,28 L80,32 L67,37 Z" />
 
     <!-- Back arm -->
     <path
         android:fillColor="#FFFFFF"
-        android:pathData="M62,38 L66,44 L64,46 L60,40 Z" />
+        android:pathData="M64,33 L70,42 L67,45 L61,36 Z" />
 
-    <!-- Thigh (bent) -->
+    <!-- Front thigh (bent, thick) -->
     <path
         android:fillColor="#FFFFFF"
-        android:pathData="M50,46 L42,58 L45,60 L53,48 Z" />
+        android:pathData="M49,44 L38,58 L42,61 L53,47 Z" />
 
-    <!-- Shin -->
+    <!-- Front shin -->
     <path
         android:fillColor="#FFFFFF"
-        android:pathData="M42,58 L36,70 L39,72 L45,60 Z" />
+        android:pathData="M38,58 L30,72 L34,74 L42,61 Z" />
 
-    <!-- Other leg -->
+    <!-- Back thigh -->
     <path
         android:fillColor="#FFFFFF"
-        android:pathData="M52,48 L60,62 L63,60 L55,48 Z" />
+        android:pathData="M53,47 L64,64 L68,61 L57,47 Z" />
 
-    <!-- Fire emoji accent (small) -->
+    <!-- Back shin -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M64,64 L58,76 L62,78 L68,61 Z" />
+
+    <!-- Fire/flame accent (bigger, more visible) -->
     <path
         android:fillColor="#FFC107"
-        android:pathData="M72,72 C72,72 70,66 72,63 C74,66 76,62 74,58 C78,62 80,68 78,72 C77,74 73,74 72,72 Z" />
+        android:pathData="M74,70 C74,70 71,62 74,58 C77,62 80,56 78,50 C83,56 86,64 83,70 C81,73 75,73 74,70 Z" />
+    <!-- Inner flame -->
+    <path
+        android:fillColor="#FF9800"
+        android:pathData="M75.5,68 C75.5,68 74,63 75.5,60 C77,63 79,59 78,55 C81,59 82,65 80.5,68 C79.5,70 76,70 75.5,68 Z" />
+
 </vector>
