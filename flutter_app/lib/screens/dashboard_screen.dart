@@ -1307,12 +1307,6 @@ class _CounterTabState extends State<_CounterTab> {
 
   int get _totalReps => _repCount + _manualReps;
 
-  Color _getAngleColor() {
-    if (_currentAngle > SitupDetector.lyingAngle) return const Color(0xFF4CAF50);
-    if (_currentAngle < SitupDetector.sittingAngle) return const Color(0xFF2196F3);
-    return _accentColor;
-  }
-
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
