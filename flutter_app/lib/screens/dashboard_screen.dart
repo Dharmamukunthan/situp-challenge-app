@@ -787,7 +787,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   title: "Private Room",
                   subtitle: "Create a room and invite friends with a code",
                   color: const Color(0xFF4CAF50),
-                  onTap: () => _showSnackBar("Private rooms coming soon!"),
+                  onTap: () => _showCreatePrivateRoom(),
                 ),
               ],
             ),
