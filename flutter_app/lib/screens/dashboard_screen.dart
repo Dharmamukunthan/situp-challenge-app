@@ -329,7 +329,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
-        final battle = data['result'];
+        final battle = data['result'] ?? data['value']
 
         if (battle != null && battle is Map) {
           final opponentName = battle['creatorId'] == widget.username
