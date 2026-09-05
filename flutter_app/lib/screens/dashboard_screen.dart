@@ -253,7 +253,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
-        final result = data['result'];
+        final result = data['result'] ?? data['value'],
 
         if (result != null && result is String) {
           setState(() => _battleId = result);
